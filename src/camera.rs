@@ -1,12 +1,16 @@
-use crate::math::rand::{rand_f32, rand_f32_range};
-use crate::math::vec3::*;
 use crate::entities::entity::*;
 use crate::interval::Interval;
+use crate::math::rand::{rand_f32, rand_f32_range};
+use crate::math::vec3::*;
 use crate::ray::Ray;
 
-const UP: Vec3 = Vec3{x: 0.0, y: 1.0, z: 0.0};
+const UP: Vec3 = Vec3 {
+    x: 0.0,
+    y: 1.0,
+    z: 0.0,
+};
 
-#[derive(Debug,Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Camera {
     pub camera_position: Vec3,
     pub pixel_delta_x: Vec3,
@@ -18,6 +22,7 @@ pub struct Camera {
     defocus_angle: f32,
     defocus_disk_u: Vec3,
     defocus_disk_v: Vec3,
+    background_color: Vec3,
 }
 
 fn random_disk_vec3() -> Vec3 {
@@ -43,13 +48,19 @@ fn degrees_to_radians(degrees: f32) -> f32 {
 }
 
 impl Camera {
-    pub fn new(image_width: u32, image_height: u32, vfov: f32, camera_pos: &Vec3, look_at: &Vec3) -> Self {
+    pub fn new(
+        image_width: u32,
+        image_height: u32,
+        vfov: f32,
+        camera_pos: &Vec3,
+        look_at: &Vec3,
+    ) -> Self {
         // Camera setup:
         let focus_dist = 10.0f32;
         let camera_position = camera_pos;
         //let focal_length = (look_at - camera_position).length();
         let theta = degrees_to_radians(vfov);
-        let h = f32::tan(theta/2.0);
+        let h = f32::tan(theta / 2.0);
         let viewport_height = 2.0f32 * h * focus_dist;
         let viewport_width = viewport_height * (image_width as f32 / image_height as f32);
 
@@ -60,18 +71,18 @@ impl Camera {
 
         let viewport_x = viewport_width * u;
         let viewport_y = viewport_height * -v;
-        
+
         let pixel_delta_x = viewport_x / image_width as f32;
         let pixel_delta_y = viewport_y / image_height as f32;
-        let viewport_upper_left = camera_position - (w * focus_dist) -
-                                        viewport_x/2.0 - viewport_y/2.0;
+        let viewport_upper_left =
+            camera_position - (w * focus_dist) - viewport_x / 2.0 - viewport_y / 2.0;
 
-        let defocus_angle = 0.6;
+        let defocus_angle = 0.0;
         let defocus_radius = focus_dist * f32::tan(degrees_to_radians(defocus_angle / 2.0));
         let defocus_disk_u = u * defocus_radius;
         let defocus_disk_v = v * defocus_radius;
 
-        let pixel_origin  = viewport_upper_left + 0.5 * (pixel_delta_x + pixel_delta_y);
+        let pixel_origin = viewport_upper_left + 0.5 * (pixel_delta_x + pixel_delta_y);
         let sample_count = 500;
         Self {
             camera_position: *camera_position,
@@ -84,7 +95,12 @@ impl Camera {
             defocus_angle,
             defocus_disk_u,
             defocus_disk_v,
+            background_color: Vec3::new(0.0, 0.0, 0.0),
         }
+    }
+
+    pub fn set_background_color(&mut self, color: &Vec3) {
+        self.background_color = *color;
     }
 
     pub fn ray_color(&self, ray: &Ray, entity_list: &EntityList, bounce_idx: u32) -> Vec3 {
@@ -95,21 +111,31 @@ impl Camera {
         let mut record = HitRecord::new();
         if entity_list.hit(ray, &Interval::new(0.001, f32::MAX), &mut record) {
             let mut scattered = Ray::default();
-            let mut attenuation = Vec3::origin();
+            let mut attenuation = Vec3::zero();
             let Some(material) = record.material.as_ref() else {
                 panic!("Material should never be empty")
-            }; 
-            
+            };
+
+            let emission_color = record
+                .material
+                .as_ref()
+                .unwrap()
+                .emitted(&record.uv, &record.position);
             if material.scatter(ray, &record, &mut attenuation, &mut scattered) {
                 let bounce_idx = bounce_idx + 1;
-                attenuation * self.ray_color(&scattered, entity_list, bounce_idx) 
+                let scatter_color =
+                    attenuation * self.ray_color(&scattered, entity_list, bounce_idx);
+                emission_color + scatter_color
             } else {
-                vec3(0.0, 0.0, 0.0)
+                emission_color
             }
         } else {
+            /*
             let unit_vec = ray.direction.normalize();
             let t = 0.5 * (unit_vec.y + 1.0);
-            (1.0-t)*vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0)
+            (1.0 - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0)
+            */
+            self.background_color
         }
     }
 
@@ -124,12 +150,15 @@ impl Camera {
 
     pub fn get_ray(&self, x: u32, y: u32) -> Ray {
         let offset = self.sample_square();
-        let pixel_pos = self.pixel_origin + 
-                                    ((x as f32 + offset.x) * self.pixel_delta_x) + 
-                                    ((y as f32 + offset.y) * self.pixel_delta_y);
-        let ray_origin = if self.defocus_angle <= 0.0 {self.camera_position} else {self.defocus_disk_sample()};
+        let pixel_pos = self.pixel_origin
+            + ((x as f32 + offset.x) * self.pixel_delta_x)
+            + ((y as f32 + offset.y) * self.pixel_delta_y);
+        let ray_origin = if self.defocus_angle <= 0.0 {
+            self.camera_position
+        } else {
+            self.defocus_disk_sample()
+        };
         let ray_direction = pixel_pos - ray_origin;
         Ray::new(ray_origin, ray_direction)
     }
-
 }

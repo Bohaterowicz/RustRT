@@ -1,19 +1,35 @@
-use std::ops;
 use crate::math::rand;
+use std::ops;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Vec3 {
     pub x: f32,
     pub y: f32,
     pub z: f32,
-} 
+}
 
 impl Vec3 {
-    pub fn new(x: f32, y: f32, z:f32) -> Self {
-        Self {x, y, z}
+    pub fn new(x: f32, y: f32, z: f32) -> Self {
+        Self { x, y, z }
     }
 
-    pub fn normalize(&self) -> Self{
+    pub fn zero() -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        }
+    }
+
+    pub fn one() -> Self {
+        Self {
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+        }
+    }
+
+    pub fn normalize(&self) -> Self {
         let length_squared = self.x * self.x + self.y * self.y + self.z * self.z;
         if length_squared > 0.0 {
             let length = length_squared.sqrt();
@@ -24,9 +40,13 @@ impl Vec3 {
             }
         } else {
             // Return a zero vector if the original vector has zero length
-            Self { x: 0.0, y: 0.0, z: 0.0 }
+            Self {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            }
         }
-    } 
+    }
 
     pub fn length_squared(&self) -> f32 {
         dot(self, self)
@@ -37,20 +57,24 @@ impl Vec3 {
     }
 
     pub fn near_zero(&self) -> bool {
-        let eps:f32 = 1e-8;
+        let eps: f32 = 1e-8;
         self.x.abs() < eps && self.y.abs() < eps && self.z.abs() < eps
     }
 
     pub fn origin() -> Vec3 {
-        vec3(0.0, 0.0, 0.0)
+        Vec3::zero()
     }
 
     pub fn random() -> Vec3 {
         vec3(rand::rand_f32(), rand::rand_f32(), rand::rand_f32())
     }
-    
+
     pub fn random_range(min: f32, max: f32) -> Vec3 {
-        vec3(rand::rand_f32_range(min, max), rand::rand_f32_range(min, max), rand::rand_f32_range(min, max))
+        vec3(
+            rand::rand_f32_range(min, max),
+            rand::rand_f32_range(min, max),
+            rand::rand_f32_range(min, max),
+        )
     }
 
     pub fn random_unit() -> Vec3 {
@@ -65,16 +89,16 @@ impl Vec3 {
 }
 
 impl ops::Deref for Vec3 {
-    type Target = [f32;3];
+    type Target = [f32; 3];
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &*(self as *const Vec3 as *const [f32;3])}
+        unsafe { &*(self as *const Vec3 as *const [f32; 3]) }
     }
 }
 
 impl ops::DerefMut for Vec3 {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut *(self as *mut Vec3 as *mut [f32;3])}
+        unsafe { &mut *(self as *mut Vec3 as *mut [f32; 3]) }
     }
 }
 
@@ -250,7 +274,7 @@ pub fn cross(a: &Vec3, b: &Vec3) -> Vec3 {
 }
 
 pub fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
-    *v - 2.0 * dot(v,n)*n
+    *v - 2.0 * dot(v, n) * n
 }
 
 // A helper function to create a vector
@@ -258,57 +282,132 @@ pub fn vec3(x: f32, y: f32, z: f32) -> Vec3 {
     Vec3::new(x, y, z)
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_vec3_addition() {
-        let v1 = Vec3 { x: 1.0, y: 2.0, z: 3.0 };
-        let v2 = Vec3 { x: 4.0, y: 5.0, z: 6.0 };
+        let v1 = Vec3 {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let v2 = Vec3 {
+            x: 4.0,
+            y: 5.0,
+            z: 6.0,
+        };
         let result = v1 + v2;
-        assert_eq!(result, Vec3 { x: 5.0, y: 7.0, z: 9.0 });
+        assert_eq!(
+            result,
+            Vec3 {
+                x: 5.0,
+                y: 7.0,
+                z: 9.0
+            }
+        );
     }
 
     #[test]
     fn test_vec3_addition_zero() {
-        let v1 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
-        let v2 = Vec3 { x: 1.0, y: 1.0, z: 1.0 };
+        let v1 = Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let v2 = Vec3 {
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+        };
         let result = v1 + v2;
-        assert_eq!(result, v2);  // Adding zero vector should give back v2
+        assert_eq!(result, v2); // Adding zero vector should give back v2
     }
 
     #[test]
     fn test_vec3_addition_negative() {
-        let v1 = Vec3 { x: -1.0, y: -2.0, z: -3.0 };
-        let v2 = Vec3 { x: 4.0, y: 5.0, z: 6.0 };
+        let v1 = Vec3 {
+            x: -1.0,
+            y: -2.0,
+            z: -3.0,
+        };
+        let v2 = Vec3 {
+            x: 4.0,
+            y: 5.0,
+            z: 6.0,
+        };
         let result = v1 + v2;
-        assert_eq!(result, Vec3 { x: 3.0, y: 3.0, z: 3.0 });
+        assert_eq!(
+            result,
+            Vec3 {
+                x: 3.0,
+                y: 3.0,
+                z: 3.0
+            }
+        );
     }
 
     #[test]
     fn test_vec3_subtraction() {
-        let v1 = Vec3 { x: 5.0, y: 7.0, z: 9.0 };
-        let v2 = Vec3 { x: 2.0, y: 3.0, z: 4.0 };
+        let v1 = Vec3 {
+            x: 5.0,
+            y: 7.0,
+            z: 9.0,
+        };
+        let v2 = Vec3 {
+            x: 2.0,
+            y: 3.0,
+            z: 4.0,
+        };
         let result = v1 - v2;
-        assert_eq!(result, Vec3 { x: 3.0, y: 4.0, z: 5.0 });
+        assert_eq!(
+            result,
+            Vec3 {
+                x: 3.0,
+                y: 4.0,
+                z: 5.0
+            }
+        );
     }
 
     #[test]
     fn test_vec3_subtraction_zero() {
-        let v1 = Vec3 { x: 0.0, y: 0.0, z: 0.0 };
-        let v2 = Vec3 { x: 1.0, y: 1.0, z: 1.0 };
+        let v1 = Vec3 {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let v2 = Vec3 {
+            x: 1.0,
+            y: 1.0,
+            z: 1.0,
+        };
         let result = v2 - v1;
         assert_eq!(result, v2);
     }
 
     #[test]
     fn test_vec3_subtraction_negative() {
-        let v1 = Vec3 { x: 7.0, y: 8.0, z: 9.0 };
-        let v2 = Vec3 { x: 4.0, y: 5.0, z: 6.0 };
+        let v1 = Vec3 {
+            x: 7.0,
+            y: 8.0,
+            z: 9.0,
+        };
+        let v2 = Vec3 {
+            x: 4.0,
+            y: 5.0,
+            z: 6.0,
+        };
         let result = v2 - v1;
-        assert_eq!(result, Vec3 { x: -3.0, y: -3.0, z: -3.0 });
+        assert_eq!(
+            result,
+            Vec3 {
+                x: -3.0,
+                y: -3.0,
+                z: -3.0
+            }
+        );
     }
 
     #[test]
@@ -335,14 +434,13 @@ mod tests {
     fn test_vec3_division() {
         // Create a Vec3 with arbitrary values
         let vec = Vec3::new(6.0, 9.0, 12.0);
-        
+
         // Divide by a scalar (f32)
         let result = vec / 3.0;
-        
-        // Check if the result is as expected (each component divided by 3)
-        assert_eq!(result.x, 2.0);  // 6.0 / 3.0 = 2.0
-        assert_eq!(result.y, 3.0);  // 9.0 / 3.0 = 3.0
-        assert_eq!(result.z, 4.0);  // 12.0 / 3.0 = 4.0
-    }
 
+        // Check if the result is as expected (each component divided by 3)
+        assert_eq!(result.x, 2.0); // 6.0 / 3.0 = 2.0
+        assert_eq!(result.y, 3.0); // 9.0 / 3.0 = 3.0
+        assert_eq!(result.z, 4.0); // 12.0 / 3.0 = 4.0
+    }
 }

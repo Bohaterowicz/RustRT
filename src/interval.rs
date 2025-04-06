@@ -1,4 +1,5 @@
 
+#[derive(Debug, Default, Clone, Copy)]
 pub struct Interval {
     pub min: f32,
     pub max: f32,
@@ -9,6 +10,13 @@ impl Interval {
         Self {
             min,
             max,
+        }
+    }
+
+    pub fn combine(a: &Interval, b: &Interval) -> Interval {
+        Interval { 
+            min: f32::min(a.min, b.min),
+            max: f32::max(a.max, b.max)
         }
     }
 
@@ -32,6 +40,11 @@ impl Interval {
 
     pub fn contains(&self, value: f32) -> bool {
         self.min <= value && value <= self.max
+    }
+
+    pub fn expand(&self, delta: f32) -> Interval {
+        let padding = delta / 2.0;
+        Interval { min: self.min-padding, max: self.max+padding }
     }
 
     pub fn surrounds(&self, value: f32) -> bool {
