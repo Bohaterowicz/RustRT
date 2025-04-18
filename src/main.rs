@@ -5,6 +5,7 @@ mod entities;
 mod interval;
 mod material;
 mod math;
+mod pdf;
 mod perlin_noise;
 mod ray;
 mod texture;
@@ -19,9 +20,11 @@ use std::thread;
 
 use bvh::BVH;
 use camera::Camera;
+use entities::entity::Transformable;
+use entities::quad::create_box;
 use indicatif::ProgressBar;
 
-use entities::{entity::EntityList, quad::Quad, sphere::Sphere};
+use entities::{constant_medium::ConstantMedium, entity::EntityList, quad::Quad, sphere::Sphere};
 use interval::Interval;
 use material::*;
 use math::rand::{rand_f32, rand_f32_range};
@@ -124,10 +127,12 @@ fn render(
                 let x = (offset / 4) % image_width;
                 let y = (offset / 4) / image_width;
 
-                let mut color = vec3(0.0, 0.0, 0.0);
-                for _ in 0..camera.samples_per_pixel {
-                    let ray = camera.get_ray(x, y);
-                    color += camera.ray_color(&ray, &entities, 0);
+                let mut color = Vec3::zero();
+                for i in 0..camera.sqrt_spp {
+                    for j in 0..camera.sqrt_spp {
+                        let ray = camera.get_ray(x, y, i, j);
+                        color += camera.ray_color(&ray, &entities, 0);
+                    }
                 }
                 color *= camera.pixel_samples_scale;
 
@@ -162,16 +167,16 @@ fn scene_scattered_balls(
         width,
         height,
         20.0,
-        &vec3(13.0, 2.0, 3.0),
-        &vec3(0.0, 0.0, 0.0),
+        &Vec3::new(13.0, 2.0, 3.0),
+        &Vec3::zero(),
     );
 
     *camera = new_camera;
 
     let material_ground: Arc<dyn Material> = Arc::new(Lambertian {
         albedo: Box::new(CheckerTexture::new(
-            Texture::new(vec3(0.2, 0.3, 0.1)),
-            Texture::new(vec3(0.9, 0.9, 0.9)),
+            Texture::new(Vec3::new(0.2, 0.3, 0.1)),
+            Texture::new(Vec3::new(0.9, 0.9, 0.9)),
             0.32,
         )),
     });
@@ -179,14 +184,14 @@ fn scene_scattered_balls(
         refraction_index: 1.5,
     });
     let material_2: Arc<dyn Material> = Arc::new(Lambertian {
-        albedo: Box::new(Texture::new(vec3(0.4, 0.2, 0.1))),
+        albedo: Box::new(Texture::new(Vec3::new(0.4, 0.2, 0.1))),
     });
     let material_3: Arc<dyn Material> = Arc::new(Metal {
-        albedo: vec3(0.7, 0.6, 0.5),
+        albedo: Vec3::new(0.7, 0.6, 0.5),
         fuzz: 0.0,
     });
 
-    let center = vec3(0.0, -1000.0, -1.0);
+    let center = Vec3::new(0.0, -1000.0, -1.0);
     let radius = 1000.0;
     entities.add(Box::new(Sphere::new(
         center,
@@ -197,12 +202,12 @@ fn scene_scattered_balls(
     for a in -11..11 {
         for b in -11..11 {
             let choose_mat = rand_f32();
-            let center = vec3(
+            let center = Vec3::new(
                 (a as f32) + 0.9 * rand_f32(),
                 0.2,
                 (b as f32) * 0.9 * rand_f32(),
             );
-            if (center - vec3(4.0, 0.2, 0.0)).length() > 0.9 {
+            if (center - Vec3::new(4.0, 0.2, 0.0)).length() > 0.9 {
                 if choose_mat < 0.8 {
                     let albedo = Vec3::random() * Vec3::random();
                     let material: Arc<dyn Material> = Arc::new(Lambertian {
@@ -224,7 +229,7 @@ fn scene_scattered_balls(
         }
     }
 
-    let center = vec3(0.0, 1.0, 0.0);
+    let center = Vec3::new(0.0, 1.0, 0.0);
     let radius = 1.0;
     entities.add(Box::new(Sphere::new(
         center,
@@ -232,7 +237,7 @@ fn scene_scattered_balls(
         Arc::clone(&material_1),
     )));
 
-    let center = vec3(-4.0, 1.0, 0.0);
+    let center = Vec3::new(-4.0, 1.0, 0.0);
     let radius = 0.5;
     entities.add(Box::new(Sphere::new(
         center,
@@ -240,7 +245,7 @@ fn scene_scattered_balls(
         Arc::clone(&material_2),
     )));
 
-    let center = vec3(4.0, 1.0, 0.0);
+    let center = Vec3::new(4.0, 1.0, 0.0);
     let radius = 0.4;
     entities.add(Box::new(Sphere::new(
         center,
@@ -267,20 +272,20 @@ fn checker_spheres(entities_out: &mut EntityList, camera: &mut Camera, width: u3
 
     let material_ground: Arc<dyn Material> = Arc::new(Lambertian {
         albedo: Box::new(CheckerTexture::new(
-            Texture::new(vec3(0.2, 0.3, 0.1)),
-            Texture::new(vec3(0.9, 0.9, 0.9)),
+            Texture::new(Vec3::new(0.2, 0.3, 0.1)),
+            Texture::new(Vec3::new(0.9, 0.9, 0.9)),
             0.32,
         )),
     });
 
     entities.add(Box::new(Sphere::new(
-        vec3(0.0, -10.0, 0.0),
+        Vec3::new(0.0, -10.0, 0.0),
         10.0,
         Arc::clone(&material_ground),
     )));
 
     entities.add(Box::new(Sphere::new(
-        vec3(0.0, 10.0, 0.0),
+        Vec3::new(0.0, 10.0, 0.0),
         10.0,
         Arc::clone(&material_ground),
     )));
@@ -304,7 +309,7 @@ fn scene_earth(entities_out: &mut EntityList, camera: &mut Camera, width: u32, h
     });
 
     entities_out.add(Box::new(Sphere::new(
-        vec3(0.0, 0.0, 0.0),
+        Vec3::zero(),
         2.0,
         Arc::clone(&earth_material),
     )));
@@ -331,13 +336,13 @@ fn scene_perlin_spheres(
     });
 
     entities_out.add(Box::new(Sphere::new(
-        vec3(0.0, 2.0, 0.0),
+        Vec3::new(0.0, 2.0, 0.0),
         2.0,
         Arc::clone(&perlin_material),
     )));
 
     entities_out.add(Box::new(Sphere::new(
-        vec3(0.0, -1000.0, 0.0),
+        Vec3::new(0.0, -1000.0, 0.0),
         1000.0,
         Arc::clone(&perlin_material),
     )));
@@ -357,19 +362,19 @@ fn scene_quads(entities_out: &mut EntityList, camera: &mut Camera, width: u32, h
     *camera = new_camera;
 
     let left_red: Arc<dyn Material> = Arc::new(Lambertian {
-        albedo: Box::new(Texture::new(vec3(1.0, 0.2, 0.2))),
+        albedo: Box::new(Texture::new(Vec3::new(1.0, 0.2, 0.2))),
     });
     let back_green: Arc<dyn Material> = Arc::new(Lambertian {
-        albedo: Box::new(Texture::new(vec3(0.2, 1.0, 0.2))),
+        albedo: Box::new(Texture::new(Vec3::new(0.2, 1.0, 0.2))),
     });
     let right_blue: Arc<dyn Material> = Arc::new(Lambertian {
-        albedo: Box::new(Texture::new(vec3(0.2, 0.2, 1.0))),
+        albedo: Box::new(Texture::new(Vec3::new(0.2, 0.2, 1.0))),
     });
     let upper_orange: Arc<dyn Material> = Arc::new(Lambertian {
-        albedo: Box::new(Texture::new(vec3(1.0, 0.5, 0.0))),
+        albedo: Box::new(Texture::new(Vec3::new(1.0, 0.5, 0.0))),
     });
     let lower_teal: Arc<dyn Material> = Arc::new(Lambertian {
-        albedo: Box::new(Texture::new(vec3(0.2, 0.8, 0.8))),
+        albedo: Box::new(Texture::new(Vec3::new(0.2, 0.8, 0.8))),
     });
 
     entities_out.add(Box::new(Quad::new(
@@ -420,19 +425,19 @@ fn scene_simple_light(entities_out: &mut EntityList, camera: &mut Camera, width:
     });
 
     entities_out.add(Box::new(Sphere::new(
-        vec3(0.0, 2.0, 0.0),
+        Vec3::new(0.0, 2.0, 0.0),
         2.0,
         Arc::clone(&perlin_material),
     )));
 
     entities_out.add(Box::new(Sphere::new(
-        vec3(0.0, -1000.0, 0.0),
+        Vec3::new(0.0, -1000.0, 0.0),
         1000.0,
         Arc::clone(&perlin_material),
     )));
 
     let light_material: Arc<dyn Material> = Arc::new(DiffuseLight {
-        emit: Box::new(Texture::new(vec3(4.0, 4.0, 4.0))),
+        emit: Box::new(Texture::new(Vec3::new(4.0, 4.0, 4.0))),
     });
 
     entities_out.add(Box::new(Quad::new(
@@ -503,6 +508,125 @@ fn scene_cornell_box(entities_out: &mut EntityList, camera: &mut Camera, width: 
         Vec3::new(0.0, 0.0, 555.0),
         Arc::clone(&white_material),
     )));
+
+    let mut box1 = create_box(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(165.0, 330.0, 165.0),
+        Arc::clone(&white_material),
+    );
+    box1.rotate(Vec3::new(0.0, 1.0, 0.0), 15.0);
+    box1.translate(Vec3::new(265.0, 0.0, 295.0));
+    entities_out.add(Box::from(box1));
+
+    let mut box2 = create_box(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(165.0, 165.0, 165.0),
+        Arc::clone(&white_material),
+    );
+    box2.rotate(Vec3::new(0.0, 1.0, 0.0), -18.0);
+    box2.translate(Vec3::new(130.0, 0.0, 65.0));
+    entities_out.add(Box::from(box2));
+}
+
+fn scene_cornell_smoke(
+    entities_out: &mut EntityList,
+    camera: &mut Camera,
+    width: u32,
+    height: u32,
+) {
+    let new_camera = Camera::new(
+        width,
+        height,
+        40.0,
+        &Vec3::new(278.0, 278.0, -800.0),
+        &Vec3::new(278.0, 278.0, 0.0),
+    );
+
+    *camera = new_camera;
+
+    let red_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.65, 0.05, 0.05))),
+    });
+    let white_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.73, 0.73, 0.73))),
+    });
+    let green_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.12, 0.45, 0.15))),
+    });
+    let light_material: Arc<dyn Material> = Arc::new(DiffuseLight {
+        emit: Box::new(Texture::new(Vec3::new(15.0, 15.0, 15.0))),
+    });
+
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&green_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&red_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&light_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 555.0),
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Arc::clone(&white_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(555.0, 555.0, 555.0),
+        Vec3::new(-555.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -555.0),
+        Arc::clone(&white_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&white_material),
+    )));
+
+    let black_smoke_material: Arc<dyn Material> = Arc::new(Isotropic {
+        albedo: Box::new(Texture::new(Vec3::new(0.0, 0.0, 0.0))),
+    });
+    let white_smoke_material: Arc<dyn Material> = Arc::new(Isotropic {
+        albedo: Box::new(Texture::new(Vec3::new(1.0, 1.0, 1.0))),
+    });
+
+    let mut box1 = create_box(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(165.0, 330.0, 165.0),
+        Arc::clone(&white_material),
+    );
+    box1.rotate(Vec3::new(0.0, 1.0, 0.0), 15.0);
+    box1.translate(Vec3::new(265.0, 0.0, 295.0));
+
+    let mut box2 = create_box(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(165.0, 165.0, 165.0),
+        Arc::clone(&white_material),
+    );
+    box2.rotate(Vec3::new(0.0, 1.0, 0.0), -18.0);
+    box2.translate(Vec3::new(130.0, 0.0, 65.0));
+
+    entities_out.add(Box::new(ConstantMedium::new(
+        Box::from(box1),
+        0.01,
+        Arc::clone(&black_smoke_material),
+    )));
+    entities_out.add(Box::new(ConstantMedium::new(
+        Box::from(box2),
+        0.01,
+        Arc::clone(&white_smoke_material),
+    )));
 }
 
 fn main() {
@@ -528,6 +652,7 @@ fn main() {
     //scene_quads(&mut entities, &mut camera, image_width, image_height);
     //scene_simple_light(&mut entities, &mut camera, image_width, image_height);
     scene_cornell_box(&mut entities, &mut camera, image_width, image_height);
+    //scene_cornell_smoke(&mut entities, &mut camera, image_width, image_height);
     let entities = Arc::from(entities);
     let thread_count = 24;
     let mut threads = Vec::with_capacity(thread_count as usize);

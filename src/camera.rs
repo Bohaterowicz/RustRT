@@ -2,6 +2,7 @@ use crate::entities::entity::*;
 use crate::interval::Interval;
 use crate::math::rand::{rand_f32, rand_f32_range};
 use crate::math::vec3::*;
+use crate::pdf::{CosinePDF, PDF};
 use crate::ray::Ray;
 
 const UP: Vec3 = Vec3 {
@@ -17,6 +18,8 @@ pub struct Camera {
     pub pixel_delta_y: Vec3,
     pub pixel_origin: Vec3,
     pub samples_per_pixel: u32,
+    pub sqrt_spp: u32,
+    pub recip_sqrt_spp: f32,
     pub pixel_samples_scale: f32,
     max_ray_bounces: u32,
     defocus_angle: f32,
@@ -27,19 +30,10 @@ pub struct Camera {
 
 fn random_disk_vec3() -> Vec3 {
     loop {
-        let p = vec3(rand_f32_range(-1.0, 1.0), rand_f32_range(-1.0, 1.0), 0.0);
+        let p = Vec3::new(rand_f32_range(-1.0, 1.0), rand_f32_range(-1.0, 1.0), 0.0);
         if p.length_squared() < 1.0 {
             return p;
         }
-    }
-}
-
-fn random_hemisphere_vec3(normal: &Vec3) -> Vec3 {
-    let unit = Vec3::random_unit();
-    if dot(&unit, normal) > 0.0 {
-        unit
-    } else {
-        -unit
     }
 }
 
@@ -83,7 +77,7 @@ impl Camera {
         let defocus_disk_v = v * defocus_radius;
 
         let pixel_origin = viewport_upper_left + 0.5 * (pixel_delta_x + pixel_delta_y);
-        let sample_count = 500;
+        let sample_count = 1000;
         Self {
             camera_position: *camera_position,
             pixel_delta_x,
@@ -91,6 +85,8 @@ impl Camera {
             pixel_origin,
             samples_per_pixel: sample_count,
             pixel_samples_scale: 1.0 / sample_count as f32,
+            sqrt_spp: (sample_count as f32).sqrt() as u32,
+            recip_sqrt_spp: 1.0 / (sample_count as f32).sqrt(),
             max_ray_bounces: 50,
             defocus_angle,
             defocus_disk_u,
@@ -105,7 +101,7 @@ impl Camera {
 
     pub fn ray_color(&self, ray: &Ray, entity_list: &EntityList, bounce_idx: u32) -> Vec3 {
         if bounce_idx == self.max_ray_bounces {
-            return vec3(0.0, 0.0, 0.0);
+            return Vec3::zero();
         }
 
         let mut record = HitRecord::new();
@@ -116,15 +112,50 @@ impl Camera {
                 panic!("Material should never be empty")
             };
 
-            let emission_color = record
-                .material
-                .as_ref()
-                .unwrap()
-                .emitted(&record.uv, &record.position);
-            if material.scatter(ray, &record, &mut attenuation, &mut scattered) {
+            let emission_color = record.material.as_ref().unwrap().emitted(
+                ray,
+                &record,
+                &record.uv,
+                &record.position,
+            );
+            let mut pdf_value = 0.0;
+            if material.scatter(
+                ray,
+                &record,
+                &mut attenuation,
+                &mut scattered,
+                &mut pdf_value,
+            ) {
+                /*
+                let on_light = Vec3::new(
+                    rand_f32_range(213.0, 343.0),
+                    554.0,
+                    rand_f32_range(227.0, 332.0),
+                );
+                let mut to_light = on_light - record.position;
+                let dist_sq = to_light.length_squared();
+                to_light = to_light.normalize();
+                if dot(&to_light, &record.normal) < 0.0 {
+                    return emission_color;
+                }
+                let light_area = (343.0 - 213.0) * (332.0 - 227.0);
+                let ligh_cos = f32::abs(to_light.y);
+                if ligh_cos < 1e-6 {
+                    return emission_color;
+                }
+
+                pdf_value = dist_sq / (ligh_cos * light_area);
+                let scatter_pdf = material.scatter_pdf(ray, &record, &scattered);
+                */
+                let surface_pdf = CosinePDF::new(&record.normal);
+                scattered = Ray::new(record.position, surface_pdf.generate());
+                pdf_value = surface_pdf.value(&scattered.direction);
+                let scatter_pdf = material.scatter_pdf(ray, &record, &scattered);
                 let bounce_idx = bounce_idx + 1;
-                let scatter_color =
-                    attenuation * self.ray_color(&scattered, entity_list, bounce_idx);
+                let scatter_color = (attenuation
+                    * scatter_pdf
+                    * self.ray_color(&scattered, entity_list, bounce_idx))
+                    / pdf_value;
                 emission_color + scatter_color
             } else {
                 emission_color
@@ -139,8 +170,12 @@ impl Camera {
         }
     }
 
-    fn sample_square(&self) -> Vec3 {
-        vec3(rand_f32() - 0.5, rand_f32() - 0.5, 0.0)
+    fn sample_square_stratified(&self, i: u32, j: u32) -> Vec3 {
+        Vec3::new(
+            ((i as f32 + rand_f32()) * self.recip_sqrt_spp) - 0.5,
+            ((j as f32 + rand_f32()) * self.recip_sqrt_spp) - 0.5,
+            0.0,
+        )
     }
 
     pub fn defocus_disk_sample(&self) -> Vec3 {
@@ -148,9 +183,9 @@ impl Camera {
         self.camera_position + (p[0] * self.defocus_disk_u) + (p[1] * self.defocus_disk_v)
     }
 
-    pub fn get_ray(&self, x: u32, y: u32) -> Ray {
-        let offset = self.sample_square();
-        let pixel_pos = self.pixel_origin
+    pub fn get_ray(&self, x: u32, y: u32, i: u32, j: u32) -> Ray {
+        let offset = self.sample_square_stratified(i, j);
+        let pixel_pos = self.pixel_origin // pixel _origin is the center of the pixel
             + ((x as f32 + offset.x) * self.pixel_delta_x)
             + ((y as f32 + offset.y) * self.pixel_delta_y);
         let ray_origin = if self.defocus_angle <= 0.0 {

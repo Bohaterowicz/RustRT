@@ -1,25 +1,33 @@
+use crate::math::mat3::dot_v3;
 use crate::math::rand::rand_f32;
 use crate::math::{
+    mat3::Mat3,
     vec2::Vec2,
-    vec3::{dot, reflect, vec3, Vec3},
+    vec3::{dot, reflect, Vec3},
 };
 use crate::texture::TextureSampler;
 use crate::{entities::entity::HitRecord, Ray};
+use core::f32;
 use std::any::Any;
 use std::fmt::Debug;
 pub trait Material: Debug + Any + Sync + Send {
+    fn scatter_pdf(&self, _ray_in: &Ray, _record: &HitRecord, _ray_scattered: &Ray) -> f32 {
+        0.0
+    }
+
     fn scatter(
         &self,
         _ray: &Ray,
         _hit_record: &HitRecord,
         _attenuation: &mut Vec3,
         _scattered: &mut Ray,
+        _pdf: &mut f32,
     ) -> bool {
         false
     }
 
-    fn emitted(&self, _uv: &Vec2, _position: &Vec3) -> Vec3 {
-        vec3(0.0, 0.0, 0.0)
+    fn emitted(&self, _ray_in: &Ray, _record: &HitRecord, _uv: &Vec2, _position: &Vec3) -> Vec3 {
+        Vec3::zero()
     }
     fn as_any(&self) -> &dyn Any;
 }
@@ -66,23 +74,43 @@ pub struct DiffuseLight {
     pub emit: Box<dyn TextureSampler>,
 }
 
+#[derive(Debug)]
+pub struct Isotropic {
+    pub albedo: Box<dyn TextureSampler>,
+}
+
 impl Material for Lambertian {
+    fn scatter_pdf(&self, _ray_in: &Ray, _record: &HitRecord, _ray_scattered: &Ray) -> f32 {
+        /*
+        let cos_theta = dot(&record.normal, &ray_scattered.direction);
+        if cos_theta < 0.0 {
+            0.0
+        } else {
+            cos_theta / f32::consts::PI
+        }
+         */
+        1.0 / (2.0 * std::f32::consts::PI)
+    }
+
     fn scatter(
         &self,
         _ray: &Ray,
         hit_record: &HitRecord,
         attenuation: &mut Vec3,
         scattered: &mut Ray,
+        pdf: &mut f32,
     ) -> bool {
-        let mut scatter_direction = hit_record.normal + Vec3::random_unit();
-        if scatter_direction.near_zero() {
-            scatter_direction = hit_record.normal;
-        }
-        *scattered = Ray::new(hit_record.position, scatter_direction);
+        let uwv = Mat3::get_orthonormal_basis(&hit_record.normal);
+        let scatter_direction = dot_v3(
+            &uwv.transpose(),
+            &Vec3::random_cosine_hemisphere_direction(),
+        );
+        *scattered = Ray::new(hit_record.position, scatter_direction.normalize());
         *attenuation = self
             .albedo
             .as_ref()
             .value(&hit_record.uv, &hit_record.position);
+        *pdf = dot(&uwv[2], &scattered.direction) / f32::consts::PI;
         true
     }
 
@@ -98,6 +126,7 @@ impl Material for Metal {
         hit_record: &HitRecord,
         attenuation: &mut Vec3,
         scattered: &mut Ray,
+        _pdf: &mut f32,
     ) -> bool {
         let reflected = reflect(&ray.direction, &hit_record.normal).normalize()
             + (self.fuzz * Vec3::random_unit());
@@ -118,8 +147,9 @@ impl Material for Dielectric {
         hit_record: &HitRecord,
         attenuation: &mut Vec3,
         scattered: &mut Ray,
+        _pdf: &mut f32,
     ) -> bool {
-        *attenuation = vec3(1.0, 1.0, 1.0);
+        *attenuation = Vec3::one();
         let ri = if hit_record.front_face {
             1.0 / self.refraction_index
         } else {
@@ -146,8 +176,38 @@ impl Material for Dielectric {
 }
 
 impl Material for DiffuseLight {
-    fn emitted(&self, uv: &Vec2, position: &Vec3) -> Vec3 {
+    fn emitted(&self, _ray_in: &Ray, record: &HitRecord, uv: &Vec2, position: &Vec3) -> Vec3 {
+        if !record.front_face {
+            return Vec3::zero();
+        }
         self.emit.as_ref().value(uv, position)
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+impl Material for Isotropic {
+    fn scatter_pdf(&self, _ray_in: &Ray, _record: &HitRecord, _ray_scattered: &Ray) -> f32 {
+        1.0 / (4.0 * f32::consts::PI)
+    }
+
+    fn scatter(
+        &self,
+        _ray: &Ray,
+        hit_record: &HitRecord,
+        attenuation: &mut Vec3,
+        scattered: &mut Ray,
+        pdf: &mut f32,
+    ) -> bool {
+        *scattered = Ray::new(hit_record.position, Vec3::random_unit());
+        *attenuation = self
+            .albedo
+            .as_ref()
+            .value(&hit_record.uv, &hit_record.position);
+        *pdf = 1.0 / (4.0 * f32::consts::PI);
+        true
     }
 
     fn as_any(&self) -> &dyn Any {

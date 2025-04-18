@@ -2,7 +2,7 @@ use std::f32::consts::PI;
 use std::sync::Arc;
 
 use crate::aabb::{HasAABB, AABB};
-use crate::entities::entity::{HitRecord, Hittable};
+use crate::entities::entity::{HitRecord, Hittable, Transformable};
 use crate::interval::Interval;
 use crate::material::Material;
 use crate::math::{vec2::*, vec3::*};
@@ -21,7 +21,7 @@ impl HasAABB for Sphere {
     }
 
     fn compute_aabb(&self) -> AABB {
-        let rvec = vec3(self.radius, self.radius, self.radius);
+        let rvec = Vec3::new(self.radius, self.radius, self.radius);
         AABB::construct(self.center - rvec, self.center + rvec)
     }
 }
@@ -81,5 +81,16 @@ impl Hittable for Sphere {
             record.uv = Sphere::get_uv(&outward_normal);
             true
         }
+    }
+}
+
+impl Transformable for Sphere {
+    fn translate(&mut self, translation: Vec3) {
+        self.center += translation;
+        self.aabb = self.compute_aabb();
+    }
+
+    fn rotate(&mut self, _axis: Vec3, _angle: f32) {
+        // No rotation for sphere
     }
 }

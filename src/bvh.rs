@@ -2,9 +2,9 @@ use std::cmp::Ordering;
 
 use crate::{
     aabb::{Axis, HasAABB, AABB},
-    entities::entity::{EntityList, HitRecord, Hittable},
+    entities::entity::{EntityList, HitRecord, Hittable, Transformable},
     interval::Interval,
-    math::rand::rand_i32_range,
+    math::vec3::Vec3,
     ray::Ray,
 };
 
@@ -102,5 +102,29 @@ impl BVH {
                 }
             }
         }
+    }
+}
+
+impl Transformable for BVH {
+    fn translate(&mut self, translation: Vec3) {
+        match &mut self.tree {
+            BVHNode::Leaf(leaf) => leaf.translate(translation),
+            BVHNode::Branch { left, right } => {
+                left.translate(translation);
+                right.translate(translation);
+            }
+        }
+        self.bbox = self.compute_aabb();
+    }
+
+    fn rotate(&mut self, axis: Vec3, angle: f32) {
+        match &mut self.tree {
+            BVHNode::Leaf(leaf) => leaf.rotate(axis, angle),
+            BVHNode::Branch { left, right } => {
+                left.rotate(axis, angle);
+                right.rotate(axis, angle);
+            }
+        }
+        self.bbox = self.compute_aabb();
     }
 }

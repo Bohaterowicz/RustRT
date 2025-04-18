@@ -66,11 +66,11 @@ impl Vec3 {
     }
 
     pub fn random() -> Vec3 {
-        vec3(rand::rand_f32(), rand::rand_f32(), rand::rand_f32())
+        Vec3::new(rand::rand_f32(), rand::rand_f32(), rand::rand_f32())
     }
 
     pub fn random_range(min: f32, max: f32) -> Vec3 {
-        vec3(
+        Vec3::new(
             rand::rand_f32_range(min, max),
             rand::rand_f32_range(min, max),
             rand::rand_f32_range(min, max),
@@ -85,6 +85,16 @@ impl Vec3 {
                 return v;
             }
         }
+    }
+
+    pub fn random_cosine_hemisphere_direction() -> Vec3 {
+        let r1 = rand::rand_f32();
+        let r2 = rand::rand_f32();
+        let phi = 2.0 * std::f32::consts::PI * r1;
+        let x = f32::cos(phi) * f32::sqrt(r2);
+        let y = f32::sin(phi) * f32::sqrt(r2);
+        let z = f32::sqrt(1.0 - r2);
+        Vec3 { x, y, z }
     }
 }
 
@@ -261,6 +271,12 @@ impl ops::Neg for &Vec3 {
     }
 }
 
+impl From<Vec3> for [f32; 3] {
+    fn from(v: Vec3) -> Self {
+        [v.x, v.y, v.z]
+    }
+}
+
 pub fn dot(a: &Vec3, b: &Vec3) -> f32 {
     a.x * b.x + a.y * b.y + a.z * b.z
 }
@@ -275,11 +291,6 @@ pub fn cross(a: &Vec3, b: &Vec3) -> Vec3 {
 
 pub fn reflect(v: &Vec3, n: &Vec3) -> Vec3 {
     *v - 2.0 * dot(v, n) * n
-}
-
-// A helper function to create a vector
-pub fn vec3(x: f32, y: f32, z: f32) -> Vec3 {
-    Vec3::new(x, y, z)
 }
 
 #[cfg(test)]
