@@ -15,3 +15,4 @@ RustRT is a simple ray tracing renderer written in Rust. It is inspired by the "
 Below is an example of an image rendered using RustRT:
 
 ![Rendered Scene](renderF.png)
+![Rendered Cornell Box](RenderCornellBox.png)
