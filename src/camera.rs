@@ -1,8 +1,9 @@
 use crate::entities::entity::*;
 use crate::interval::Interval;
+use crate::material::ScatterResult;
 use crate::math::rand::{rand_f32, rand_f32_range};
 use crate::math::vec3::*;
-use crate::pdf::{CosinePDF, PDF};
+use crate::pdf::{CosinePDF, HittablePDF, MixedPDF, PDF};
 use crate::ray::Ray;
 
 const UP: Vec3 = Vec3 {
@@ -77,7 +78,7 @@ impl Camera {
         let defocus_disk_v = v * defocus_radius;
 
         let pixel_origin = viewport_upper_left + 0.5 * (pixel_delta_x + pixel_delta_y);
-        let sample_count = 1000;
+        let sample_count = 2000;
         Self {
             camera_position: *camera_position,
             pixel_delta_x,
@@ -87,7 +88,7 @@ impl Camera {
             pixel_samples_scale: 1.0 / sample_count as f32,
             sqrt_spp: (sample_count as f32).sqrt() as u32,
             recip_sqrt_spp: 1.0 / (sample_count as f32).sqrt(),
-            max_ray_bounces: 50,
+            max_ray_bounces: 100,
             defocus_angle,
             defocus_disk_u,
             defocus_disk_v,
@@ -99,15 +100,19 @@ impl Camera {
         self.background_color = *color;
     }
 
-    pub fn ray_color(&self, ray: &Ray, entity_list: &EntityList, bounce_idx: u32) -> Vec3 {
+    pub fn ray_color(
+        &self,
+        ray: &Ray,
+        entity_list: &EntityList,
+        lights: &EntityList,
+        bounce_idx: u32,
+    ) -> Vec3 {
         if bounce_idx == self.max_ray_bounces {
             return Vec3::zero();
         }
 
         let mut record = HitRecord::new();
         if entity_list.hit(ray, &Interval::new(0.001, f32::MAX), &mut record) {
-            let mut scattered = Ray::default();
-            let mut attenuation = Vec3::zero();
             let Some(material) = record.material.as_ref() else {
                 panic!("Material should never be empty")
             };
@@ -118,54 +123,32 @@ impl Camera {
                 &record.uv,
                 &record.position,
             );
-            let mut pdf_value = 0.0;
-            if material.scatter(
-                ray,
-                &record,
-                &mut attenuation,
-                &mut scattered,
-                &mut pdf_value,
-            ) {
-                /*
-                let on_light = Vec3::new(
-                    rand_f32_range(213.0, 343.0),
-                    554.0,
-                    rand_f32_range(227.0, 332.0),
-                );
-                let mut to_light = on_light - record.position;
-                let dist_sq = to_light.length_squared();
-                to_light = to_light.normalize();
-                if dot(&to_light, &record.normal) < 0.0 {
-                    return emission_color;
+            let mut scatter_result = ScatterResult::default();
+            let bounce_idx = bounce_idx + 1;
+            if material.scatter(ray, &record, &mut scatter_result) {
+                if scatter_result.skip_pdf {
+                    return scatter_result.attenuation
+                        * self.ray_color(
+                            &scatter_result.skip_pdf_ray,
+                            entity_list,
+                            lights,
+                            bounce_idx,
+                        );
                 }
-                let light_area = (343.0 - 213.0) * (332.0 - 227.0);
-                let ligh_cos = f32::abs(to_light.y);
-                if ligh_cos < 1e-6 {
-                    return emission_color;
-                }
-
-                pdf_value = dist_sq / (ligh_cos * light_area);
+                let light_pdf = HittablePDF::new(record.position, lights);
+                let mixed_pdf = MixedPDF::new(&light_pdf, scatter_result.pdf.as_ref());
+                let scattered = Ray::new(record.position, mixed_pdf.generate());
+                let pdf_value = mixed_pdf.value(&scattered.direction);
                 let scatter_pdf = material.scatter_pdf(ray, &record, &scattered);
-                */
-                let surface_pdf = CosinePDF::new(&record.normal);
-                scattered = Ray::new(record.position, surface_pdf.generate());
-                pdf_value = surface_pdf.value(&scattered.direction);
-                let scatter_pdf = material.scatter_pdf(ray, &record, &scattered);
-                let bounce_idx = bounce_idx + 1;
-                let scatter_color = (attenuation
+                let scatter_color = (scatter_result.attenuation
                     * scatter_pdf
-                    * self.ray_color(&scattered, entity_list, bounce_idx))
+                    * self.ray_color(&scattered, entity_list, lights, bounce_idx))
                     / pdf_value;
                 emission_color + scatter_color
             } else {
                 emission_color
             }
         } else {
-            /*
-            let unit_vec = ray.direction.normalize();
-            let t = 0.5 * (unit_vec.y + 1.0);
-            (1.0 - t) * vec3(1.0, 1.0, 1.0) + t * vec3(0.5, 0.7, 1.0)
-            */
             self.background_color
         }
     }

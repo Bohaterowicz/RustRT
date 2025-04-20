@@ -5,11 +5,31 @@ use crate::math::{
     vec2::Vec2,
     vec3::{dot, reflect, Vec3},
 };
+use crate::pdf::{CosinePDF, EmptyPDF, SpherePDF, PDF};
 use crate::texture::TextureSampler;
 use crate::{entities::entity::HitRecord, Ray};
 use core::f32;
 use std::any::Any;
 use std::fmt::Debug;
+
+pub struct ScatterResult {
+    pub attenuation: Vec3,
+    pub skip_pdf: bool,
+    pub pdf: Box<dyn PDF>,
+    pub skip_pdf_ray: Ray,
+}
+
+impl Default for ScatterResult {
+    fn default() -> Self {
+        Self {
+            attenuation: Vec3::zero(),
+            skip_pdf: false,
+            pdf: Box::new(EmptyPDF),
+            skip_pdf_ray: Ray::default(),
+        }
+    }
+}
+
 pub trait Material: Debug + Any + Sync + Send {
     fn scatter_pdf(&self, _ray_in: &Ray, _record: &HitRecord, _ray_scattered: &Ray) -> f32 {
         0.0
@@ -19,9 +39,7 @@ pub trait Material: Debug + Any + Sync + Send {
         &self,
         _ray: &Ray,
         _hit_record: &HitRecord,
-        _attenuation: &mut Vec3,
-        _scattered: &mut Ray,
-        _pdf: &mut f32,
+        _scatter_result: &mut ScatterResult,
     ) -> bool {
         false
     }
@@ -37,6 +55,9 @@ impl PartialEq for dyn Material {
         self.as_any().type_id() == other.as_any().type_id()
     }
 }
+
+#[derive(Debug)]
+pub struct EmptyMaterial;
 
 #[derive(Debug)]
 pub struct Lambertian {
@@ -79,38 +100,31 @@ pub struct Isotropic {
     pub albedo: Box<dyn TextureSampler>,
 }
 
+impl Material for EmptyMaterial {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 impl Material for Lambertian {
-    fn scatter_pdf(&self, _ray_in: &Ray, _record: &HitRecord, _ray_scattered: &Ray) -> f32 {
-        /*
+    fn scatter_pdf(&self, _ray_in: &Ray, record: &HitRecord, ray_scattered: &Ray) -> f32 {
         let cos_theta = dot(&record.normal, &ray_scattered.direction);
         if cos_theta < 0.0 {
             0.0
         } else {
             cos_theta / f32::consts::PI
         }
-         */
-        1.0 / (2.0 * std::f32::consts::PI)
     }
 
     fn scatter(
         &self,
         _ray: &Ray,
         hit_record: &HitRecord,
-        attenuation: &mut Vec3,
-        scattered: &mut Ray,
-        pdf: &mut f32,
+        scatter_result: &mut ScatterResult,
     ) -> bool {
-        let uwv = Mat3::get_orthonormal_basis(&hit_record.normal);
-        let scatter_direction = dot_v3(
-            &uwv.transpose(),
-            &Vec3::random_cosine_hemisphere_direction(),
-        );
-        *scattered = Ray::new(hit_record.position, scatter_direction.normalize());
-        *attenuation = self
-            .albedo
-            .as_ref()
-            .value(&hit_record.uv, &hit_record.position);
-        *pdf = dot(&uwv[2], &scattered.direction) / f32::consts::PI;
+        scatter_result.attenuation = self.albedo.value(&hit_record.uv, &hit_record.position);
+        scatter_result.pdf = Box::new(CosinePDF::new(&hit_record.normal));
+        scatter_result.skip_pdf = false;
         true
     }
 
@@ -124,15 +138,15 @@ impl Material for Metal {
         &self,
         ray: &Ray,
         hit_record: &HitRecord,
-        attenuation: &mut Vec3,
-        scattered: &mut Ray,
-        _pdf: &mut f32,
+        scatter_result: &mut ScatterResult,
     ) -> bool {
         let reflected = reflect(&ray.direction, &hit_record.normal).normalize()
             + (self.fuzz * Vec3::random_unit());
-        *scattered = Ray::new(hit_record.position, reflected);
-        *attenuation = self.albedo;
-        dot(&scattered.direction, &hit_record.normal) > 0.0
+        scatter_result.attenuation = self.albedo;
+        scatter_result.skip_pdf = true;
+        scatter_result.pdf = Box::new(EmptyPDF);
+        scatter_result.skip_pdf_ray = Ray::new(hit_record.position, reflected);
+        true
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -145,11 +159,11 @@ impl Material for Dielectric {
         &self,
         ray: &Ray,
         hit_record: &HitRecord,
-        attenuation: &mut Vec3,
-        scattered: &mut Ray,
-        _pdf: &mut f32,
+        scatter_result: &mut ScatterResult,
     ) -> bool {
-        *attenuation = Vec3::one();
+        scatter_result.attenuation = Vec3::one();
+        scatter_result.skip_pdf = true;
+        scatter_result.pdf = Box::new(EmptyPDF);
         let ri = if hit_record.front_face {
             1.0 / self.refraction_index
         } else {
@@ -166,7 +180,7 @@ impl Material for Dielectric {
                 Dielectric::refract(&direction, &hit_record.normal, ri)
             };
 
-        *scattered = Ray::new(hit_record.position, ref_direction);
+        scatter_result.skip_pdf_ray = Ray::new(hit_record.position, ref_direction);
         true
     }
 
@@ -197,16 +211,11 @@ impl Material for Isotropic {
         &self,
         _ray: &Ray,
         hit_record: &HitRecord,
-        attenuation: &mut Vec3,
-        scattered: &mut Ray,
-        pdf: &mut f32,
+        scatter_result: &mut ScatterResult,
     ) -> bool {
-        *scattered = Ray::new(hit_record.position, Vec3::random_unit());
-        *attenuation = self
-            .albedo
-            .as_ref()
-            .value(&hit_record.uv, &hit_record.position);
-        *pdf = 1.0 / (4.0 * f32::consts::PI);
+        scatter_result.attenuation = self.albedo.value(&hit_record.uv, &hit_record.position);
+        scatter_result.pdf = Box::new(SpherePDF);
+        scatter_result.skip_pdf = false;
         true
     }
 

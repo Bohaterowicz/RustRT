@@ -1,6 +1,7 @@
 use crate::aabb::{HasAABB, AABB};
 use crate::interval::Interval;
 use crate::material::Material;
+use crate::math::rand::rand_i32_range;
 use crate::math::{vec2::*, vec3::*};
 use crate::ray::Ray;
 use std::sync::Arc;
@@ -109,6 +110,20 @@ impl HasAABB for EntityList {
 impl Hittable for EntityList {
     fn hit<'a>(&'a self, ray: &Ray, t_interval: &Interval, record: &mut HitRecord<'a>) -> bool {
         self.hit(ray, t_interval, record)
+    }
+
+    fn pdf_value(&self, origin: &Vec3, direction: &Vec3) -> f32 {
+        let weight = 1.0 / self.list.len() as f32;
+        let mut sum = 0.0;
+        for entity in self.list.as_slice() {
+            sum = sum + (weight * entity.pdf_value(origin, direction))
+        }
+        sum
+    }
+
+    fn random(&self, origin: &Vec3) -> Vec3 {
+        let int_size = self.list.len() as i32;
+        self.list[rand_i32_range(0, int_size - 1) as usize].random(origin)
     }
 }
 

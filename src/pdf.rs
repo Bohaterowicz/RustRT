@@ -1,13 +1,17 @@
 use crate::entities::entity::Hittable;
+use crate::math::rand::rand_f32;
 use crate::math::{
     mat3::{dot_v3, Mat3},
     vec3::{dot, Vec3},
 };
+use crate::ray::Ray;
 
 pub trait PDF {
     fn value(&self, direction: &Vec3) -> f32;
     fn generate(&self) -> Vec3;
 }
+
+pub struct EmptyPDF;
 
 pub struct SpherePDF;
 
@@ -23,14 +27,34 @@ impl CosinePDF {
     }
 }
 
-pub struct HittablePDF {
+pub struct HittablePDF<'a> {
     pub origin: Vec3,
-    pub hittable: Box<dyn Hittable>,
+    pub hittable: &'a dyn Hittable,
 }
 
-impl HittablePDF {
-    pub fn new(origin: Vec3, hittable: Box<dyn Hittable>) -> Self {
+impl<'a> HittablePDF<'a> {
+    pub fn new(origin: Vec3, hittable: &'a dyn Hittable) -> Self {
         Self { origin, hittable }
+    }
+}
+
+pub struct MixedPDF<'a> {
+    pub mix: [&'a dyn PDF; 2],
+}
+
+impl<'a> MixedPDF<'a> {
+    pub fn new(a: &'a dyn PDF, b: &'a dyn PDF) -> Self {
+        Self { mix: [a, b] }
+    }
+}
+
+impl PDF for EmptyPDF {
+    fn value(&self, _direction: &Vec3) -> f32 {
+        0.0
+    }
+
+    fn generate(&self) -> Vec3 {
+        Vec3::zero()
     }
 }
 
@@ -57,12 +81,26 @@ impl PDF for CosinePDF {
     }
 }
 
-impl PDF for HittablePDF {
+impl<'a> PDF for HittablePDF<'a> {
     fn value(&self, direction: &Vec3) -> f32 {
         self.hittable.pdf_value(&self.origin, direction)
     }
 
     fn generate(&self) -> Vec3 {
         self.hittable.random(&self.origin)
+    }
+}
+
+impl<'a> PDF for MixedPDF<'a> {
+    fn value(&self, direction: &Vec3) -> f32 {
+        0.5 * self.mix[0].value(direction) + 0.5 * self.mix[1].value(direction)
+    }
+
+    fn generate(&self) -> Vec3 {
+        if rand_f32() > 0.5 {
+            self.mix[0].generate()
+        } else {
+            self.mix[1].generate()
+        }
     }
 }

@@ -1,3 +1,4 @@
+use core::f32;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
@@ -5,7 +6,10 @@ use crate::aabb::{HasAABB, AABB};
 use crate::entities::entity::{HitRecord, Hittable, Transformable};
 use crate::interval::Interval;
 use crate::material::Material;
+use crate::math::mat3::{dot_v3, Mat3};
+use crate::math::rand::rand_f32;
 use crate::math::{vec2::*, vec3::*};
+use crate::ray::Ray;
 
 #[derive(Debug, Clone)]
 pub struct Sphere {
@@ -82,6 +86,29 @@ impl Hittable for Sphere {
             true
         }
     }
+
+    fn pdf_value(&self, origin: &Vec3, direction: &Vec3) -> f32 {
+        let mut hit_rec = HitRecord::new();
+        if !self.hit(
+            &Ray::new(*origin, *direction),
+            &Interval::new(0.001, f32::MAX),
+            &mut hit_rec,
+        ) {
+            return 0.0;
+        }
+
+        let dis_sq = (self.center - origin).length_squared();
+        let cos_theta_max = f32::sqrt(1.0 - ((self.radius * self.radius) / dis_sq));
+        let solid_angle = 2.0 * f32::consts::PI * (1.0 - cos_theta_max);
+        1.0 / solid_angle
+    }
+
+    fn random(&self, origin: &Vec3) -> Vec3 {
+        let direction = self.center - origin;
+        let dis_sq = direction.length_squared();
+        let onb = Mat3::get_orthonormal_basis(&direction);
+        dot_v3(&onb.transpose(), &random_in_cone(self.radius, dis_sq))
+    }
 }
 
 impl Transformable for Sphere {
@@ -93,4 +120,15 @@ impl Transformable for Sphere {
     fn rotate(&mut self, _axis: Vec3, _angle: f32) {
         // No rotation for sphere
     }
+}
+
+fn random_in_cone(radius: f32, distance_sq: f32) -> Vec3 {
+    let r1 = rand_f32();
+    let r2 = rand_f32();
+    let phi = 2.0 * f32::consts::PI * r1;
+
+    let z = 1.0 + r2 * (f32::sqrt(1.0 - ((radius * radius) / distance_sq)) - 1.0);
+    let x = f32::cos(phi) * f32::sqrt(1.0 - (z * z));
+    let y = f32::sin(phi) * f32::sqrt(1.0 - (z * z));
+    Vec3::new(x, y, z)
 }

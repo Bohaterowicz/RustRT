@@ -123,7 +123,7 @@ impl Hittable for Quad {
         if self.hit(
             &Ray::new(*origin, *direction),
             &Interval::new(0.001, f32::MAX),
-            hit_rec,
+            &mut hit_rec,
         ) {
             let dist_sq = hit_rec.t * hit_rec.t * direction.length_squared();
             let cosine = f32::abs(dot(direction, &hit_rec.normal) / direction.length());

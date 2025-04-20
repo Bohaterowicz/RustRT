@@ -20,7 +20,7 @@ use std::thread;
 
 use bvh::BVH;
 use camera::Camera;
-use entities::entity::Transformable;
+use entities::entity::{Hittable, Transformable};
 use entities::quad::create_box;
 use indicatif::ProgressBar;
 
@@ -84,6 +84,7 @@ fn render(
     image_width: u32,
     image_height: u32,
     entities: &Arc<EntityList>,
+    lights: &Arc<EntityList>,
     camera: &Camera,
     stop: &Arc<AtomicBool>,
 ) {
@@ -102,6 +103,7 @@ fn render(
             (i + 1) * chunk_size
         };
         let entities = Arc::clone(entities);
+        let lights = Arc::clone(lights);
         let camera = camera.clone();
         let stdout = Arc::clone(&stdout);
         let stop = Arc::clone(stop);
@@ -131,7 +133,17 @@ fn render(
                 for i in 0..camera.sqrt_spp {
                     for j in 0..camera.sqrt_spp {
                         let ray = camera.get_ray(x, y, i, j);
-                        color += camera.ray_color(&ray, &entities, 0);
+                        let mut ray_color = camera.ray_color(&ray, &entities, &lights, 0);
+                        if ray_color.x.is_nan() {
+                            ray_color.x = 0.0;
+                        }
+                        if ray_color.y.is_nan() {
+                            ray_color.y = 0.0;
+                        }
+                        if ray_color.z.is_nan() {
+                            ray_color.z = 0.0;
+                        }
+                        color += ray_color;
                     }
                 }
                 color *= camera.pixel_samples_scale;
@@ -154,7 +166,7 @@ fn render(
         threads.push(thread);
     }
 }
-
+/*
 fn scene_scattered_balls(
     entities_out: &mut EntityList,
     camera: &mut Camera,
@@ -292,6 +304,7 @@ fn checker_spheres(entities_out: &mut EntityList, camera: &mut Camera, width: u3
 
     *entities_out = entities;
 }
+     */
 
 fn scene_earth(entities_out: &mut EntityList, camera: &mut Camera, width: u32, height: u32) {
     let new_camera = Camera::new(
@@ -448,7 +461,13 @@ fn scene_simple_light(entities_out: &mut EntityList, camera: &mut Camera, width:
     )));
 }
 
-fn scene_cornell_box(entities_out: &mut EntityList, camera: &mut Camera, width: u32, height: u32) {
+fn scene_cornell_box(
+    entities_out: &mut EntityList,
+    lights: &mut EntityList,
+    camera: &mut Camera,
+    width: u32,
+    height: u32,
+) {
     let new_camera = Camera::new(
         width,
         height,
@@ -468,8 +487,18 @@ fn scene_cornell_box(entities_out: &mut EntityList, camera: &mut Camera, width: 
     let green_material: Arc<dyn Material> = Arc::new(Lambertian {
         albedo: Box::new(Texture::new(Vec3::new(0.12, 0.45, 0.15))),
     });
+    let yellow_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.33, 0.33, 0.33))),
+    });
     let light_material: Arc<dyn Material> = Arc::new(DiffuseLight {
         emit: Box::new(Texture::new(Vec3::new(15.0, 15.0, 15.0))),
+    });
+    let aluminium_material: Arc<dyn Material> = Arc::new(Metal {
+        albedo: Vec3::new(0.8, 0.85, 0.88),
+        fuzz: 0.0,
+    });
+    let glass: Arc<dyn Material> = Arc::new(Dielectric {
+        refraction_index: 1.5,
     });
 
     entities_out.add(Box::new(Quad::new(
@@ -483,12 +512,6 @@ fn scene_cornell_box(entities_out: &mut EntityList, camera: &mut Camera, width: 
         Vec3::new(0.0, 555.0, 0.0),
         Vec3::new(0.0, 0.0, 555.0),
         Arc::clone(&red_material),
-    )));
-    entities_out.add(Box::new(Quad::new(
-        Vec3::new(343.0, 554.0, 332.0),
-        Vec3::new(-130.0, 0.0, 0.0),
-        Vec3::new(0.0, 0.0, -105.0),
-        Arc::clone(&light_material),
     )));
     entities_out.add(Box::new(Quad::new(
         Vec3::new(0.0, 0.0, 555.0),
@@ -506,7 +529,7 @@ fn scene_cornell_box(entities_out: &mut EntityList, camera: &mut Camera, width: 
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(555.0, 0.0, 0.0),
         Vec3::new(0.0, 0.0, 555.0),
-        Arc::clone(&white_material),
+        Arc::clone(&yellow_material),
     )));
 
     let mut box1 = create_box(
@@ -517,7 +540,7 @@ fn scene_cornell_box(entities_out: &mut EntityList, camera: &mut Camera, width: 
     box1.rotate(Vec3::new(0.0, 1.0, 0.0), 15.0);
     box1.translate(Vec3::new(265.0, 0.0, 295.0));
     entities_out.add(Box::from(box1));
-
+    /*
     let mut box2 = create_box(
         Vec3::new(0.0, 0.0, 0.0),
         Vec3::new(165.0, 165.0, 165.0),
@@ -526,6 +549,32 @@ fn scene_cornell_box(entities_out: &mut EntityList, camera: &mut Camera, width: 
     box2.rotate(Vec3::new(0.0, 1.0, 0.0), -18.0);
     box2.translate(Vec3::new(130.0, 0.0, 65.0));
     entities_out.add(Box::from(box2));
+     */
+    entities_out.add(Box::new(Sphere::new(
+        Vec3::new(190.0, 90.0, 190.0),
+        90.0,
+        glass,
+    )));
+
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&light_material),
+    )));
+
+    let empty_mat: Arc<dyn Material> = Arc::new(EmptyMaterial);
+    lights.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&empty_mat),
+    )));
+    lights.add(Box::new(Sphere::new(
+        Vec3::new(190.0, 90.0, 190.0),
+        90.0,
+        Arc::clone(&empty_mat),
+    )));
 }
 
 fn scene_cornell_smoke(
@@ -644,6 +693,7 @@ fn main() {
     let bitmap = create_bitmap(image_width as i32, image_height as i32);
 
     let mut entities = EntityList::new();
+    let mut lights = EntityList::new();
     let mut camera = Camera::default();
     //scene_scattered_balls(&mut entities, &mut camera, image_width, image_height);
     //checker_spheres(&mut entities, &mut camera, image_width, image_height);
@@ -651,10 +701,17 @@ fn main() {
     //scene_perlin_spheres(&mut entities, &mut camera, image_width, image_height);
     //scene_quads(&mut entities, &mut camera, image_width, image_height);
     //scene_simple_light(&mut entities, &mut camera, image_width, image_height);
-    scene_cornell_box(&mut entities, &mut camera, image_width, image_height);
+    scene_cornell_box(
+        &mut entities,
+        &mut lights,
+        &mut camera,
+        image_width,
+        image_height,
+    );
     //scene_cornell_smoke(&mut entities, &mut camera, image_width, image_height);
     let entities = Arc::from(entities);
-    let thread_count = 24;
+    let lights = Arc::from(lights);
+    let thread_count = 4;
     let mut threads = Vec::with_capacity(thread_count as usize);
     let stop = Arc::new(AtomicBool::new(false));
 
@@ -667,6 +724,7 @@ fn main() {
             image_width,
             image_height,
             &entities,
+            &lights,
             &camera,
             &stop,
         );
@@ -690,6 +748,7 @@ fn main() {
                     image_width,
                     image_height,
                     &entities,
+                    &lights,
                     &camera,
                     &stop,
                 );
