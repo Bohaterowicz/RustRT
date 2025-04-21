@@ -78,7 +78,7 @@ impl Camera {
         let defocus_disk_v = v * defocus_radius;
 
         let pixel_origin = viewport_upper_left + 0.5 * (pixel_delta_x + pixel_delta_y);
-        let sample_count = 2000;
+        let sample_count = 200;
         Self {
             camera_position: *camera_position,
             pixel_delta_x,
@@ -88,7 +88,7 @@ impl Camera {
             pixel_samples_scale: 1.0 / sample_count as f32,
             sqrt_spp: (sample_count as f32).sqrt() as u32,
             recip_sqrt_spp: 1.0 / (sample_count as f32).sqrt(),
-            max_ray_bounces: 100,
+            max_ray_bounces: 50,
             defocus_angle,
             defocus_disk_u,
             defocus_disk_v,
@@ -116,6 +116,10 @@ impl Camera {
             let Some(material) = record.material.as_ref() else {
                 panic!("Material should never be empty")
             };
+
+            if record.is_mesh == true && bounce_idx == 0 {
+                assert!(record.is_mesh);
+            }
 
             let emission_color = record.material.as_ref().unwrap().emitted(
                 ray,

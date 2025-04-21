@@ -14,6 +14,7 @@ pub struct HitRecord<'a> {
     pub uv: Vec2,
     pub material: Option<&'a Arc<dyn Material>>,
     pub front_face: bool,
+    pub is_mesh: bool,
 }
 
 impl HitRecord<'_> {
@@ -25,6 +26,7 @@ impl HitRecord<'_> {
             normal: Vec3::zero(),
             uv: Vec2::zero(),
             front_face: false,
+            is_mesh: false,
         }
     }
 

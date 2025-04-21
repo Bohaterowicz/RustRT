@@ -5,6 +5,8 @@ mod entities;
 mod interval;
 mod material;
 mod math;
+mod mesh;
+mod obj_reader;
 mod pdf;
 mod perlin_noise;
 mod ray;
@@ -21,6 +23,7 @@ use std::thread;
 use bvh::BVH;
 use camera::Camera;
 use entities::entity::{Hittable, Transformable};
+use entities::mesh::Object;
 use entities::quad::create_box;
 use indicatif::ProgressBar;
 
@@ -29,6 +32,7 @@ use interval::Interval;
 use material::*;
 use math::rand::{rand_f32, rand_f32_range};
 use math::vec3::*;
+use obj_reader::read_obj;
 use ray::Ray;
 use texture::{CheckerTexture, ImageTexture, NoiseTexture, Texture};
 use window::Window;
@@ -540,16 +544,10 @@ fn scene_cornell_box(
     box1.rotate(Vec3::new(0.0, 1.0, 0.0), 15.0);
     box1.translate(Vec3::new(265.0, 0.0, 295.0));
     entities_out.add(Box::from(box1));
-    /*
-    let mut box2 = create_box(
-        Vec3::new(0.0, 0.0, 0.0),
-        Vec3::new(165.0, 165.0, 165.0),
-        Arc::clone(&white_material),
-    );
-    box2.rotate(Vec3::new(0.0, 1.0, 0.0), -18.0);
-    box2.translate(Vec3::new(130.0, 0.0, 65.0));
-    entities_out.add(Box::from(box2));
-     */
+    let mesh = read_obj("assets/mesh/cube.obj");
+    let mut obj = Object::new(mesh, Arc::clone(&green_material));
+    obj.translate(Vec3::new(50.0, 200.0, 300.0));
+    entities_out.add(Box::from(obj));
     entities_out.add(Box::new(Sphere::new(
         Vec3::new(190.0, 90.0, 190.0),
         90.0,
