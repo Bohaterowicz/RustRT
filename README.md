@@ -16,3 +16,4 @@ Below is an example of an image rendered using RustRT:
 
 ![Rendered Scene](renderF.png)
 ![Rendered Cornell Box](RenderCornellBox.png)
+![Rendered Cornell Box](RenderCornellBunnies.png)

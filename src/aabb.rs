@@ -9,6 +9,13 @@ pub enum Axis {
 
 impl Axis {
     pub const ALL: [Axis; 3] = [Axis::X, Axis::Y, Axis::Z];
+    pub fn to_idx(axis: Axis) -> usize {
+        match axis {
+            Axis::X => 0,
+            Axis::Y => 1,
+            Axis::Z => 2,
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -127,7 +134,7 @@ impl AABB {
     }
 }
 
-pub trait HasAABB {
-    fn get_aabb(&self) -> AABB;
-    fn compute_aabb(&self) -> AABB;
+pub trait BoundingBox {
+    fn get_bounding_box(&self) -> AABB;
+    fn construct_bounding_box(&self) -> AABB;
 }

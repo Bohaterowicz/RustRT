@@ -13,6 +13,7 @@ mod ray;
 mod texture;
 mod window;
 
+use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{self, Write};
 use std::ops::Deref;
@@ -33,6 +34,7 @@ use material::*;
 use math::rand::{rand_f32, rand_f32_range};
 use math::vec3::*;
 use obj_reader::read_obj;
+use rand::seq::SliceRandom;
 use ray::Ray;
 use texture::{CheckerTexture, ImageTexture, NoiseTexture, Texture};
 use window::Window;
@@ -81,6 +83,30 @@ fn write_ppm(bitmap: &Bitmap) -> io::Result<()> {
     Ok(())
 }
 
+fn compute_chunks(total: u32, scale: u32) -> VecDeque<(u32, u32)> {
+    let cache_line_size = 64;
+    let chunk_count = total.div_ceil(cache_line_size * scale);
+    let mut chunks = VecDeque::new();
+    for i in 0..chunk_count {
+        let start = i * cache_line_size * scale;
+        let end = if i == chunk_count - 1 {
+            total
+        } else {
+            (i + 1) * cache_line_size * scale
+        };
+        chunks.push_back((start, end));
+    }
+    // randomize the order of chunks
+    let mut rng = rand::thread_rng();
+    let mut chunk_vec: Vec<(u32, u32)> = chunks.iter().cloned().collect();
+    chunk_vec.shuffle(&mut rng);
+    chunks.clear();
+    for chunk in chunk_vec {
+        chunks.push_back(chunk);
+    }
+    chunks
+}
+
 fn render(
     threads: &mut Vec<thread::JoinHandle<()>>,
     count: u32,
@@ -95,76 +121,85 @@ fn render(
     let thread_count = count;
     let pb = ProgressBar::new((image_height * image_width) as u64);
     let pb = Arc::new(Mutex::new(pb));
-    let chunk_size = ((image_width * image_height) / thread_count) * 4;
     let stdout = Arc::new(Mutex::new(io::stdout()));
-    for i in 0..thread_count {
+    let chunks = Arc::new(Mutex::new(compute_chunks(
+        image_width * image_height * 4,
+        256,
+    )));
+    for _ in 0..thread_count {
         let pb_clone = Arc::clone(&pb);
         let buffer = Arc::clone(bitmap);
-        let start = i * chunk_size;
-        let end = if i == thread_count - 1 {
-            image_width * image_height * 4
-        } else {
-            (i + 1) * chunk_size
-        };
         let entities = Arc::clone(entities);
         let lights = Arc::clone(lights);
         let camera = camera.clone();
         let stdout = Arc::clone(&stdout);
+        let chunks = Arc::clone(&chunks);
         let stop = Arc::clone(stop);
         let thread = thread::spawn(move || {
-            let data: *mut u8;
-            {
+            let data: *mut u8 = {
                 let mut buffer = buffer.lock().unwrap();
-                data = buffer.data.as_mut().unwrap().as_mut_ptr();
-                let mut stdout = stdout.lock().unwrap();
-                if let Err(e) = writeln!(
-                    stdout,
-                    "Thread {:?} - Buffer size: {}",
-                    thread::current().id(),
-                    end - start
-                ) {
-                    eprintln!("Error writing to stdout: {}", e);
-                }
-            }
-            for offset in (start..end).step_by(4) {
-                if stop.load(Ordering::Acquire) {
-                    return;
-                }
-                let x = (offset / 4) % image_width;
-                let y = (offset / 4) / image_width;
+                buffer.data.as_mut().unwrap().as_mut_ptr()
+            };
 
-                let mut color = Vec3::zero();
-                for i in 0..camera.sqrt_spp {
-                    for j in 0..camera.sqrt_spp {
-                        let ray = camera.get_ray(x, y, i, j);
-                        let mut ray_color = camera.ray_color(&ray, &entities, &lights, 0);
-                        if ray_color.x.is_nan() {
-                            ray_color.x = 0.0;
-                        }
-                        if ray_color.y.is_nan() {
-                            ray_color.y = 0.0;
-                        }
-                        if ray_color.z.is_nan() {
-                            ray_color.z = 0.0;
-                        }
-                        color += ray_color;
+            loop {
+                let (start, end) = {
+                    let mut chunks = chunks.lock().unwrap();
+                    if chunks.is_empty() {
+                        break;
+                    }
+                    chunks.pop_front().unwrap()
+                };
+                {
+                    let mut stdout = stdout.lock().unwrap();
+                    if let Err(e) = writeln!(
+                        stdout,
+                        "Thread {:?} - Buffer size: {}",
+                        thread::current().id(),
+                        end - start
+                    ) {
+                        eprintln!("Error writing to stdout: {}", e);
                     }
                 }
-                color *= camera.pixel_samples_scale;
+                for offset in (start..end).step_by(4) {
+                    if stop.load(Ordering::Acquire) {
+                        return;
+                    }
+                    let x = (offset / 4) % image_width;
+                    let y = (offset / 4) / image_width;
 
-                let intensity = Interval::new(0.0, 0.999);
-                let ir = (255.99 * intensity.clamp(linear_to_gamma(color.x))) as u8;
-                let ig = (255.99 * intensity.clamp(linear_to_gamma(color.y))) as u8;
-                let ib = (255.99 * intensity.clamp(linear_to_gamma(color.z))) as u8;
+                    let mut color = Vec3::zero();
+                    for i in 0..camera.sqrt_spp {
+                        for j in 0..camera.sqrt_spp {
+                            let ray = camera.get_ray(x, y, i, j);
+                            let mut ray_color = camera.ray_color(&ray, &entities, &lights, 0);
+                            if ray_color.x.is_nan() {
+                                ray_color.x = 0.0;
+                            }
+                            if ray_color.y.is_nan() {
+                                ray_color.y = 0.0;
+                            }
+                            if ray_color.z.is_nan() {
+                                ray_color.z = 0.0;
+                            }
+                            color += ray_color;
+                        }
+                    }
+                    color *= camera.pixel_samples_scale;
 
-                unsafe {
-                    data.add(offset as usize).write(ib);
-                    data.add((offset + 1) as usize).write(ig);
-                    data.add((offset + 2) as usize).write(ir);
-                    data.add((offset + 3) as usize).write(0xFF);
+                    let intensity = Interval::new(0.0, 0.999);
+                    let ir = (255.99 * intensity.clamp(linear_to_gamma(color.x))) as u8;
+                    let ig = (255.99 * intensity.clamp(linear_to_gamma(color.y))) as u8;
+                    let ib = (255.99 * intensity.clamp(linear_to_gamma(color.z))) as u8;
+
+                    unsafe {
+                        data.add(offset as usize).write(ib);
+                        data.add((offset + 1) as usize).write(ig);
+                        data.add((offset + 2) as usize).write(ir);
+                        data.add((offset + 3) as usize).write(0xFF);
+                    }
+                    let pb = pb_clone.lock().unwrap();
+                    pb.inc(1);
                 }
-                let pb = pb_clone.lock().unwrap();
-                pb.inc(1);
             }
         });
         threads.push(thread);
@@ -676,6 +711,112 @@ fn scene_cornell_smoke(
     )));
 }
 
+fn scene_cornell_mesh(
+    entities_out: &mut EntityList,
+    lights: &mut EntityList,
+    camera: &mut Camera,
+    width: u32,
+    height: u32,
+) {
+    let new_camera = Camera::new(
+        width,
+        height,
+        40.0,
+        &Vec3::new(278.0, 278.0, -800.0),
+        &Vec3::new(278.0, 278.0, 0.0),
+    );
+
+    *camera = new_camera;
+
+    let red_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.65, 0.05, 0.05))),
+    });
+    let white_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.73, 0.73, 0.73))),
+    });
+    let green_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.12, 0.45, 0.15))),
+    });
+    let yellow_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.33, 0.33, 0.33))),
+    });
+    let light_material: Arc<dyn Material> = Arc::new(DiffuseLight {
+        emit: Box::new(Texture::new(Vec3::new(15.0, 15.0, 15.0))),
+    });
+    let glass: Arc<dyn Material> = Arc::new(Dielectric {
+        refraction_index: 1.5,
+    });
+
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&green_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&red_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 555.0),
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Arc::clone(&white_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(555.0, 555.0, 555.0),
+        Vec3::new(-555.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -555.0),
+        Arc::clone(&white_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&yellow_material),
+    )));
+
+    let mesh = read_obj("assets/mesh/stanford-bunny.obj");
+    let mut obj = Object::new(mesh, Arc::clone(&red_material));
+    obj.rotate(Vec3::new(0.0, 1.0, 0.0), 180.0);
+    obj.scale(Vec3::new(2000.0, 2000.0, 2000.0));
+    obj.translate(Vec3::new(350.0, -70.0, 250.0));
+    obj.bvh = Some(BVH::new(&obj.mesh));
+    entities_out.add(Box::new(obj.clone()));
+
+    let mesh = read_obj("assets/mesh/stanford-bunny.obj");
+    let mut obj = Object::new(mesh, Arc::clone(&glass));
+    obj.rotate(Vec3::new(0.0, 1.0, 0.0), 90.0);
+    obj.scale(Vec3::new(1500.0, 1500.0, 1500.0));
+    obj.translate(Vec3::new(150.0, -30.0, 0.0));
+    obj.bvh = Some(BVH::new(&obj.mesh));
+    entities_out.add(Box::new(obj.clone()));
+
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&light_material),
+    )));
+
+    let empty_mat: Arc<dyn Material> = Arc::new(EmptyMaterial);
+    lights.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&empty_mat),
+    )));
+
+    lights.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&empty_mat),
+    )));
+}
+
 fn main() {
     let mut use_ppm = true;
     let args: Vec<String> = std::env::args().collect();
@@ -683,8 +824,8 @@ fn main() {
         use_ppm = false;
     }
     //let aspect_ratio = window.dim.width as f32 / window.dim.height as f32; //16f32/9f32;
-    const DEFAULT_WIDTH: u32 = 800;
-    const DEFAULT_HEIGHT: u32 = 600;
+    const DEFAULT_WIDTH: u32 = 1600;
+    const DEFAULT_HEIGHT: u32 = 1200;
     let image_width = DEFAULT_WIDTH;
     let image_height = DEFAULT_HEIGHT;
     assert!(image_height > 1);
@@ -699,7 +840,7 @@ fn main() {
     //scene_perlin_spheres(&mut entities, &mut camera, image_width, image_height);
     //scene_quads(&mut entities, &mut camera, image_width, image_height);
     //scene_simple_light(&mut entities, &mut camera, image_width, image_height);
-    scene_cornell_box(
+    scene_cornell_mesh(
         &mut entities,
         &mut lights,
         &mut camera,
@@ -708,8 +849,8 @@ fn main() {
     );
     //scene_cornell_smoke(&mut entities, &mut camera, image_width, image_height);
     let entities = Arc::from(entities);
-    let lights = Arc::from(lights);
-    let thread_count = 4;
+    let lights: Arc<EntityList> = Arc::from(lights);
+    let thread_count = 24;
     let mut threads = Vec::with_capacity(thread_count as usize);
     let stop = Arc::new(AtomicBool::new(false));
 

@@ -1,4 +1,4 @@
-use crate::aabb::{HasAABB, AABB};
+use crate::aabb::{BoundingBox, AABB};
 use crate::interval::Interval;
 use crate::material::Material;
 use crate::math::rand::rand_i32_range;
@@ -14,7 +14,6 @@ pub struct HitRecord<'a> {
     pub uv: Vec2,
     pub material: Option<&'a Arc<dyn Material>>,
     pub front_face: bool,
-    pub is_mesh: bool,
 }
 
 impl HitRecord<'_> {
@@ -26,7 +25,6 @@ impl HitRecord<'_> {
             normal: Vec3::zero(),
             uv: Vec2::zero(),
             front_face: false,
-            is_mesh: false,
         }
     }
 
@@ -41,12 +39,12 @@ impl HitRecord<'_> {
 }
 
 pub trait Transformable {
-    fn translate(&mut self, translation: Vec3);
-    fn rotate(&mut self, axis: Vec3, angle: f32);
-    //fn scale(&mut self, scale: Vec3);
+    fn translate(&mut self, _translation: Vec3) {}
+    fn rotate(&mut self, _axis: Vec3, _angle: f32) {}
+    fn scale(&mut self, _scale: Vec3) {}
 }
 
-pub trait Hittable: Transformable + HasAABB + Send + Sync {
+pub trait Hittable: Transformable + BoundingBox + Send + Sync {
     fn hit<'a>(&'a self, ray: &Ray, t_interval: &Interval, record: &mut HitRecord<'a>) -> bool;
 
     fn pdf_value(&self, _origin: &Vec3, _direction: &Vec3) -> f32 {
@@ -72,7 +70,7 @@ impl EntityList {
     }
 
     pub fn add(&mut self, object: Box<dyn Hittable>) {
-        self.bbox = AABB::combine(&self.bbox, &object.get_aabb());
+        self.bbox = AABB::combine(&self.bbox, &object.get_bounding_box());
         self.list.push(object);
     }
 
@@ -95,15 +93,15 @@ impl EntityList {
     }
 }
 
-impl HasAABB for EntityList {
-    fn get_aabb(&self) -> AABB {
+impl BoundingBox for EntityList {
+    fn get_bounding_box(&self) -> AABB {
         self.bbox
     }
 
-    fn compute_aabb(&self) -> AABB {
+    fn construct_bounding_box(&self) -> AABB {
         let mut aabb = AABB::default();
         for entity in &self.list {
-            aabb = AABB::combine(&aabb, &entity.get_aabb());
+            aabb = AABB::combine(&aabb, &entity.get_bounding_box());
         }
         aabb
     }
@@ -134,13 +132,13 @@ impl Transformable for EntityList {
         for entity in &mut self.list {
             entity.translate(translation);
         }
-        self.bbox = self.compute_aabb();
+        self.bbox = self.construct_bounding_box();
     }
 
     fn rotate(&mut self, axis: Vec3, angle: f32) {
         for entity in &mut self.list {
             entity.rotate(axis, angle);
         }
-        self.bbox = self.compute_aabb();
+        self.bbox = self.construct_bounding_box();
     }
 }

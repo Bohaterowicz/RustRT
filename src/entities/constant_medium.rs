@@ -1,5 +1,5 @@
 use crate::{
-    aabb::{Axis, HasAABB, AABB},
+    aabb::{Axis, BoundingBox, AABB},
     entities::entity::{HitRecord, Hittable},
     interval::Interval,
     material::Material,
@@ -30,13 +30,13 @@ impl ConstantMedium {
     }
 }
 
-impl HasAABB for ConstantMedium {
-    fn get_aabb(&self) -> AABB {
-        self.boundary.get_aabb()
+impl BoundingBox for ConstantMedium {
+    fn get_bounding_box(&self) -> AABB {
+        self.boundary.get_bounding_box()
     }
 
-    fn compute_aabb(&self) -> AABB {
-        self.boundary.compute_aabb()
+    fn construct_bounding_box(&self) -> AABB {
+        self.boundary.construct_bounding_box()
     }
 }
 

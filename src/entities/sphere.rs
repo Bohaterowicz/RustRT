@@ -2,7 +2,7 @@ use core::f32;
 use std::f32::consts::PI;
 use std::sync::Arc;
 
-use crate::aabb::{HasAABB, AABB};
+use crate::aabb::{BoundingBox, AABB};
 use crate::entities::entity::{HitRecord, Hittable, Transformable};
 use crate::interval::Interval;
 use crate::material::Material;
@@ -19,12 +19,12 @@ pub struct Sphere {
     aabb: AABB,
 }
 
-impl HasAABB for Sphere {
-    fn get_aabb(&self) -> AABB {
+impl BoundingBox for Sphere {
+    fn get_bounding_box(&self) -> AABB {
         self.aabb
     }
 
-    fn compute_aabb(&self) -> AABB {
+    fn construct_bounding_box(&self) -> AABB {
         let rvec = Vec3::new(self.radius, self.radius, self.radius);
         AABB::construct(self.center - rvec, self.center + rvec)
     }
@@ -38,7 +38,7 @@ impl Sphere {
             material,
             aabb: AABB::default(),
         };
-        new.aabb = new.compute_aabb();
+        new.aabb = new.construct_bounding_box();
         new
     }
 
@@ -114,7 +114,7 @@ impl Hittable for Sphere {
 impl Transformable for Sphere {
     fn translate(&mut self, translation: Vec3) {
         self.center += translation;
-        self.aabb = self.compute_aabb();
+        self.aabb = self.construct_bounding_box();
     }
 
     fn rotate(&mut self, _axis: Vec3, _angle: f32) {

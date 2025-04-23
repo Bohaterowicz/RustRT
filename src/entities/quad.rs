@@ -1,4 +1,4 @@
-use crate::aabb::{HasAABB, AABB};
+use crate::aabb::{BoundingBox, AABB};
 use crate::entities::entity::{EntityList, HitRecord, Hittable};
 use crate::interval::Interval;
 use crate::material::Material;
@@ -40,7 +40,7 @@ impl Quad {
             aabb: AABB::default(),
             area: n.length(),
         };
-        new.aabb = new.compute_aabb();
+        new.aabb = new.construct_bounding_box();
         new.d = dot(&new.normal, &new.q);
         new.w = n / dot(&n, &n);
         new
@@ -56,12 +56,12 @@ impl Quad {
     }
 }
 
-impl HasAABB for Quad {
-    fn get_aabb(&self) -> AABB {
+impl BoundingBox for Quad {
+    fn get_bounding_box(&self) -> AABB {
         self.aabb
     }
 
-    fn compute_aabb(&self) -> AABB {
+    fn construct_bounding_box(&self) -> AABB {
         let p0 = self.q;
         let p1 = self.q + self.u;
         let p2 = self.q + self.v;
@@ -147,7 +147,7 @@ impl Transformable for Quad {
     fn translate(&mut self, translation: Vec3) {
         self.q += translation;
         self.d = dot(&self.normal, &self.q);
-        self.aabb = self.compute_aabb();
+        self.aabb = self.construct_bounding_box();
     }
 
     fn rotate(&mut self, axis: Vec3, angle: f32) {
@@ -160,7 +160,7 @@ impl Transformable for Quad {
         self.normal = n.normalize();
         self.d = dot(&self.normal, &self.q);
         self.w = n / dot(&n, &n);
-        self.aabb = self.compute_aabb();
+        self.aabb = self.construct_bounding_box();
     }
 }
 

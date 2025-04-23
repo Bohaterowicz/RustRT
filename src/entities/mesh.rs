@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
 use super::entity::{HitRecord, Hittable, Transformable};
-use crate::aabb::{HasAABB, AABB};
+use crate::aabb::{BoundingBox, AABB};
+use crate::bvh::BVH;
 use crate::interval::Interval;
 use crate::material::Material;
+use crate::math::mat3::{dot_v3, Mat3};
 use crate::math::vec3::{cross, dot, Vec3};
 use crate::mesh::Mesh;
 use crate::ray::Ray;
 
+#[derive(Debug, Clone)]
 pub struct Object {
-    mesh: Mesh,
+    pub mesh: Mesh,
     bbox: AABB,
-    material: Arc<dyn Material>,
+    pub material: Arc<dyn Material>,
+    pub bvh: Option<BVH>,
 }
 
 impl Object {
@@ -19,44 +23,20 @@ impl Object {
         let mut obj = Object {
             mesh,
             bbox: AABB::default(),
+            bvh: None,
             material,
         };
-        obj.bbox = obj.compute_aabb();
+        obj.bbox = obj.construct_bounding_box();
         obj
     }
 }
 
-impl HasAABB for Object {
-    fn compute_aabb(&self) -> AABB {
-        assert!(self.mesh.vert_position.len() > 0);
-        let mut min = self.mesh.vert_position[0];
-        let mut max = self.mesh.vert_position[0];
-        for vert in &self.mesh.vert_position {
-            for i in 0..3 {
-                if vert[i] > max[i] {
-                    max[i] = vert[i];
-                } else if vert[i] < min[i] {
-                    min[i] = vert[i];
-                }
-            }
-        }
-        AABB::new(
-            Interval {
-                min: min.x,
-                max: max.x,
-            },
-            Interval {
-                min: min.y,
-                max: max.y,
-            },
-            Interval {
-                min: min.z,
-                max: max.z,
-            },
-        )
+impl BoundingBox for Object {
+    fn construct_bounding_box(&self) -> AABB {
+        Mesh::construct_aabb(&self.mesh)
     }
 
-    fn get_aabb(&self) -> AABB {
+    fn get_bounding_box(&self) -> AABB {
         self.bbox
     }
 }
@@ -64,24 +44,52 @@ impl HasAABB for Object {
 impl Transformable for Object {
     fn translate(&mut self, translation: Vec3) {
         for pos in &mut self.mesh.vert_position {
-            *pos = *pos + translation;
+            *pos += translation;
         }
-        self.bbox = self.compute_aabb();
+        self.bbox = self.construct_bounding_box();
     }
 
-    fn rotate(&mut self, axis: crate::math::vec3::Vec3, angle: f32) {}
+    fn rotate(&mut self, axis: Vec3, angle: f32) {
+        let rot = Mat3::rotation(axis, angle);
+        for pos in &mut self.mesh.vert_position {
+            *pos = dot_v3(&rot, pos);
+        }
+
+        for normal in &mut self.mesh.vert_normal {
+            *normal = dot_v3(&rot, normal);
+        }
+
+        self.bbox = self.construct_bounding_box();
+    }
+
+    fn scale(&mut self, scale: Vec3) {
+        for pos in &mut self.mesh.vert_position {
+            pos.x *= scale.x;
+            pos.y *= scale.y;
+            pos.z *= scale.z;
+        }
+        self.bbox = self.construct_bounding_box();
+    }
 }
 
 impl Hittable for Object {
     fn hit<'a>(&'a self, ray: &Ray, t_interval: &Interval, record: &mut HitRecord<'a>) -> bool {
-        if !self.bbox.hit(ray, *t_interval) {
+        /*
+        if !self.bbox.hit(ray, *t_interval).0 {
+            return false;
+        }
+        */
+        let mut faces = Vec::new();
+        let bvh = self.bvh.as_ref().unwrap();
+        if !bvh.hit(ray, t_interval, &mut faces) {
             return false;
         }
 
         let mut local_interval = *t_interval;
         let mut is_hit = false;
+        let faces = faces; //&self.mesh.faces;
 
-        for face in &self.mesh.faces {
+        for face in faces {
             let positions = &self.mesh.vert_position;
             let edge1 = positions[face.vert_pos_idx[1]] - positions[face.vert_pos_idx[0]];
             let edge2 = positions[face.vert_pos_idx[2]] - positions[face.vert_pos_idx[0]];
@@ -111,7 +119,6 @@ impl Hittable for Object {
                 record.position = ray.at(t);
                 record.set_face_normal(ray, &self.mesh.vert_normal[face.vert_normal_idx[0]]);
                 record.material = Some(&self.material);
-                record.is_mesh = true;
                 local_interval.max = t;
                 is_hit = true;
             }

@@ -1,4 +1,4 @@
-use crate::math::vec3::Vec3;
+use crate::math::vec3::{cross, Vec3};
 use crate::mesh::{Face, Mesh};
 use core::str;
 use std::io::Read;
@@ -52,11 +52,11 @@ pub fn parse_obj(data: &str) -> Mesh {
                     .next()
                     .and_then(|s| s.parse::<usize>().ok())
                     .map(|i| i - 1);
-                if let (Some(vp), Some(vn)) = (v_pos_idx, v_normal_idx) {
+                if let Some(vp) = v_pos_idx {
                     pos_idx[i] = vp;
+                }
+                if let Some(vn) = v_normal_idx {
                     normal_idx[i] = vn;
-                } else {
-                    panic!("corrupted obj file...");
                 }
             }
             mesh.faces.push(Face {
@@ -65,5 +65,25 @@ pub fn parse_obj(data: &str) -> Mesh {
             });
         }
     }
+
+    if mesh.vert_normal.is_empty() {
+        compute_normals(&mut mesh, false);
+    }
     mesh
+}
+
+fn compute_normals(mesh: &mut Mesh, _smooth: bool) {
+    let positions = &mesh.vert_position;
+    let mut normals = vec![Vec3::zero(); mesh.faces.len()];
+    for (i, face) in mesh.faces.iter_mut().enumerate() {
+        let e1 = positions[face.vert_pos_idx[1]] - positions[face.vert_pos_idx[0]];
+        let e2 = positions[face.vert_pos_idx[2]] - positions[face.vert_pos_idx[0]];
+        let normal = cross(&e1, &e2).normalize();
+
+        normals[i] = normal;
+        face.vert_normal_idx[0] = i;
+        face.vert_normal_idx[1] = i;
+        face.vert_normal_idx[2] = i;
+    }
+    mesh.vert_normal = normals;
 }
