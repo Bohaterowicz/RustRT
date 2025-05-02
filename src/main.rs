@@ -23,7 +23,7 @@ use std::thread;
 
 use bvh::BVH;
 use camera::Camera;
-use entities::entity::{Hittable, Transformable};
+use entities::entity::Transformable;
 use entities::mesh::Object;
 use entities::quad::create_box;
 use indicatif::ProgressBar;
@@ -31,12 +31,11 @@ use indicatif::ProgressBar;
 use entities::{constant_medium::ConstantMedium, entity::EntityList, quad::Quad, sphere::Sphere};
 use interval::Interval;
 use material::*;
-use math::rand::{rand_f32, rand_f32_range};
 use math::vec3::*;
 use obj_reader::read_obj;
 use rand::seq::SliceRandom;
 use ray::Ray;
-use texture::{CheckerTexture, ImageTexture, NoiseTexture, Texture};
+use texture::{ImageTexture, NoiseTexture, Texture};
 use window::Window;
 
 #[derive(Debug, Default)]
@@ -782,7 +781,7 @@ fn scene_cornell_mesh(
     let mut obj = Object::new(mesh, Arc::clone(&red_material));
     obj.rotate(Vec3::new(0.0, 1.0, 0.0), 180.0);
     obj.scale(Vec3::new(2000.0, 2000.0, 2000.0));
-    obj.translate(Vec3::new(350.0, -70.0, 250.0));
+    obj.translate(Vec3::new(350.0, -70.0, 300.0));
     obj.bvh = Some(BVH::new(&obj.mesh));
     entities_out.add(Box::new(obj.clone()));
 
@@ -790,7 +789,105 @@ fn scene_cornell_mesh(
     let mut obj = Object::new(mesh, Arc::clone(&glass));
     obj.rotate(Vec3::new(0.0, 1.0, 0.0), 90.0);
     obj.scale(Vec3::new(1500.0, 1500.0, 1500.0));
-    obj.translate(Vec3::new(150.0, -30.0, 0.0));
+    obj.translate(Vec3::new(150.0, -60.0, 100.0));
+    obj.bvh = Some(BVH::new(&obj.mesh));
+    entities_out.add(Box::new(obj.clone()));
+
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&light_material),
+    )));
+
+    let empty_mat: Arc<dyn Material> = Arc::new(EmptyMaterial);
+    lights.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&empty_mat),
+    )));
+
+    lights.add(Box::new(Quad::new(
+        Vec3::new(343.0, 554.0, 332.0),
+        Vec3::new(-130.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -105.0),
+        Arc::clone(&empty_mat),
+    )));
+}
+
+fn scene_cornell_mesh_sphere(
+    entities_out: &mut EntityList,
+    lights: &mut EntityList,
+    camera: &mut Camera,
+    width: u32,
+    height: u32,
+) {
+    let new_camera = Camera::new(
+        width,
+        height,
+        40.0,
+        &Vec3::new(278.0, 278.0, -800.0),
+        &Vec3::new(278.0, 278.0, 0.0),
+    );
+
+    *camera = new_camera;
+
+    let red_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.65, 0.05, 0.05))),
+    });
+    let white_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.73, 0.73, 0.73))),
+    });
+    let green_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.12, 0.45, 0.15))),
+    });
+    let yellow_material: Arc<dyn Material> = Arc::new(Lambertian {
+        albedo: Box::new(Texture::new(Vec3::new(0.33, 0.33, 0.33))),
+    });
+    let light_material: Arc<dyn Material> = Arc::new(DiffuseLight {
+        emit: Box::new(Texture::new(Vec3::new(15.0, 15.0, 15.0))),
+    });
+    let glass: Arc<dyn Material> = Arc::new(Dielectric {
+        refraction_index: 1.5,
+    });
+
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&green_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&red_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 555.0),
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 555.0, 0.0),
+        Arc::clone(&white_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(555.0, 555.0, 555.0),
+        Vec3::new(-555.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, -555.0),
+        Arc::clone(&white_material),
+    )));
+    entities_out.add(Box::new(Quad::new(
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(555.0, 0.0, 0.0),
+        Vec3::new(0.0, 0.0, 555.0),
+        Arc::clone(&yellow_material),
+    )));
+
+    let mesh = read_obj("assets/mesh/sphere_flat.obj");
+    let mut obj = Object::new(mesh, Arc::clone(&red_material));
+    //obj.rotate(Vec3::new(0.0, 1.0, 0.0), 180.0);
+    obj.scale(Vec3::new(2.0, 2.0, 2.0));
+    obj.translate(Vec3::new(250.0, 200.0, 350.0));
     obj.bvh = Some(BVH::new(&obj.mesh));
     entities_out.add(Box::new(obj.clone()));
 

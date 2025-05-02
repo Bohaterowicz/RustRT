@@ -1,9 +1,6 @@
 use rand::seq::SliceRandom;
 
-use crate::math::{
-    rand::rand_f32,
-    vec3::{dot, Vec3},
-};
+use crate::math::vec3::{dot, Vec3};
 
 #[derive(Debug, Clone)]
 pub struct PerlinNoise {

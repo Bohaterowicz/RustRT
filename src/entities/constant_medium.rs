@@ -1,5 +1,5 @@
 use crate::{
-    aabb::{Axis, BoundingBox, AABB},
+    aabb::{BoundingBox, AABB},
     entities::entity::{HitRecord, Hittable},
     interval::Interval,
     material::Material,
@@ -88,7 +88,7 @@ impl Hittable for ConstantMedium {
 
         record.t = rec1.t + hit_distance / ray.direction.length();
         record.position = ray.at(record.t);
-        record.set_face_normal(ray, &Vec3::new(1.0, 0.0, 0.0));
+        record.set_face_normal(ray, &Vec3::new(1.0, 0.0, 0.0), true);
         record.front_face = true;
         record.material = Some(&self.phase_function);
         true

@@ -80,7 +80,7 @@ impl Hittable for Sphere {
             record.t = root;
             record.position = ray.at(root);
             let outward_normal = (record.position - self.center).normalize();
-            record.set_face_normal(ray, &outward_normal);
+            record.set_face_normal(ray, &outward_normal, true);
             record.material = Some(&self.material);
             record.uv = Sphere::get_uv(&outward_normal);
             true

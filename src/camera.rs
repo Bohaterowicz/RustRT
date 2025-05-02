@@ -3,7 +3,7 @@ use crate::interval::Interval;
 use crate::material::ScatterResult;
 use crate::math::rand::{rand_f32, rand_f32_range};
 use crate::math::vec3::*;
-use crate::pdf::{CosinePDF, HittablePDF, MixedPDF, PDF};
+use crate::pdf::{HittablePDF, MixedPDF, PDF};
 use crate::ray::Ray;
 
 const UP: Vec3 = Vec3 {
@@ -78,7 +78,7 @@ impl Camera {
         let defocus_disk_v = v * defocus_radius;
 
         let pixel_origin = viewport_upper_left + 0.5 * (pixel_delta_x + pixel_delta_y);
-        let sample_count = 3000;
+        let sample_count = 500;
         Self {
             camera_position: *camera_position,
             pixel_delta_x,
@@ -88,7 +88,7 @@ impl Camera {
             pixel_samples_scale: 1.0 / sample_count as f32,
             sqrt_spp: (sample_count as f32).sqrt() as u32,
             recip_sqrt_spp: 1.0 / (sample_count as f32).sqrt(),
-            max_ray_bounces: 200,
+            max_ray_bounces: 50,
             defocus_angle,
             defocus_disk_u,
             defocus_disk_v,
@@ -137,7 +137,10 @@ impl Camera {
                 }
                 let light_pdf = HittablePDF::new(record.position, lights);
                 let mixed_pdf = MixedPDF::new(&light_pdf, scatter_result.pdf.as_ref());
-                let scattered = Ray::new(record.position, mixed_pdf.generate());
+                let scattered = Ray::new(
+                    record.position + record.normal * 1e-3,
+                    mixed_pdf.generate().normalize(),
+                );
                 let pdf_value = mixed_pdf.value(&scattered.direction);
                 let scatter_pdf = material.scatter_pdf(ray, &record, &scattered);
                 let scatter_color = (scatter_result.attenuation

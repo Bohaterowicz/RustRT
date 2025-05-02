@@ -113,7 +113,7 @@ impl Hittable for Quad {
             record.t = t;
             record.position = hit_p;
             record.material = Some(&self.material);
-            record.set_face_normal(ray, &self.normal);
+            record.set_face_normal(ray, &self.normal, true);
             true
         }
     }

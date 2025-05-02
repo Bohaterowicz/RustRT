@@ -28,9 +28,9 @@ impl HitRecord<'_> {
         }
     }
 
-    pub fn set_face_normal(&mut self, ray: &Ray, out_normal: &Vec3) {
-        self.front_face = dot(&ray.direction, out_normal) < 0.0;
-        self.normal = if self.front_face {
+    pub fn set_face_normal(&mut self, ray: &Ray, out_normal: &Vec3, adjust_back_normal: bool) {
+        self.front_face = dot(&ray.direction, out_normal) + 1e-3 < 0.0;
+        self.normal = if self.front_face || !adjust_back_normal {
             *out_normal
         } else {
             -*out_normal

@@ -7,8 +7,9 @@ use crate::interval::Interval;
 use crate::material::Material;
 use crate::math::mat3::{dot_v3, Mat3};
 use crate::math::vec3::{cross, dot, Vec3};
-use crate::mesh::Mesh;
+use crate::mesh::{Face, Mesh};
 use crate::ray::Ray;
+use std::cell::RefCell;
 
 #[derive(Debug, Clone)]
 pub struct Object {
@@ -72,57 +73,69 @@ impl Transformable for Object {
     }
 }
 
+// create a thread local faces vector such that we do not allocate it everytime we hit a mesh. Allocate with a capacity...
+thread_local! {
+    pub static BVH_FACES_VEC: RefCell<Vec<Face>> = RefCell::new(Vec::with_capacity(64 * 10));
+}
+
+const EPS: f32 = 1e-4;
+
 impl Hittable for Object {
     fn hit<'a>(&'a self, ray: &Ray, t_interval: &Interval, record: &mut HitRecord<'a>) -> bool {
-        /*
-        if !self.bbox.hit(ray, *t_interval).0 {
-            return false;
-        }
-        */
-        let mut faces = Vec::new();
         let bvh = self.bvh.as_ref().unwrap();
-        if !bvh.hit(ray, t_interval, &mut faces) {
-            return false;
-        }
-
-        let mut local_interval = *t_interval;
         let mut is_hit = false;
-        let faces = faces; //&self.mesh.faces;
 
-        for face in faces {
-            let positions = &self.mesh.vert_position;
-            let edge1 = positions[face.vert_pos_idx[1]] - positions[face.vert_pos_idx[0]];
-            let edge2 = positions[face.vert_pos_idx[2]] - positions[face.vert_pos_idx[0]];
-            let ray_cross_e2 = cross(&ray.direction, &edge2);
-            let det = dot(&edge1, &ray_cross_e2);
+        BVH_FACES_VEC.with_borrow_mut(|faces| {
+            let mut _dbug_v = Vec::new();
+            faces.clear();
+            if bvh.hit(ray, t_interval, faces) {
+                let mut local_interval = *t_interval;
+                for face in faces {
+                    let positions = &self.mesh.vert_position;
+                    let vert0 = positions[face.vert_pos_idx[0]];
+                    let vert1 = positions[face.vert_pos_idx[1]];
+                    let vert2 = positions[face.vert_pos_idx[2]];
 
-            if det > -f32::EPSILON && det < f32::EPSILON {
-                continue;
+                    let edge1 = vert1 - vert0;
+                    let edge2 = vert2 - vert0;
+                    let ray_cross_e2 = cross(&ray.direction, &edge2);
+                    let det = dot(&edge1, &ray_cross_e2);
+
+                    if det > -EPS && det < EPS {
+                        continue;
+                    }
+
+                    let inv_det = 1.0 / det;
+                    let s = ray.origin - vert0;
+                    let u = inv_det * dot(&s, &ray_cross_e2);
+                    if !(0.0 - EPS..1.0 + EPS).contains(&u) {
+                        continue;
+                    }
+
+                    let s_cross_e1 = cross(&s, &edge1);
+                    let v = inv_det * dot(&ray.direction, &s_cross_e1);
+                    if v < -EPS || (u + v - EPS) > 1.0 {
+                        continue;
+                    }
+
+                    let t = inv_det * dot(&edge2, &s_cross_e1);
+                    _dbug_v.push(t);
+                    if t > EPS && local_interval.contains(t) {
+                        record.t = t;
+                        record.position = ray.at(t);
+                        let w = (1.0 - u - v).max(0.0);
+                        let n0 = &self.mesh.vert_normal[face.vert_normal_idx[0]];
+                        let n1 = &self.mesh.vert_normal[face.vert_normal_idx[1]];
+                        let n2 = &self.mesh.vert_normal[face.vert_normal_idx[2]];
+                        let interpolated_normal = ((*n0 * w) + (*n1 * u) + (*n2 * v)).normalize();
+                        record.set_face_normal(ray, &interpolated_normal, true);
+                        record.material = Some(&self.material);
+                        local_interval.max = t;
+                        is_hit = true;
+                    }
+                }
             }
-
-            let inv_det = 1.0 / det;
-            let s = ray.origin - positions[face.vert_pos_idx[0]];
-            let u = inv_det * dot(&s, &ray_cross_e2);
-            if u < 0.0 || u > 1.0 {
-                continue;
-            }
-
-            let s_cross_e1 = cross(&s, &edge1);
-            let v = inv_det * dot(&ray.direction, &s_cross_e1);
-            if v < 0.0 || (u + v) > 1.0 {
-                continue;
-            }
-
-            let t = inv_det * dot(&edge2, &s_cross_e1);
-            if t > f32::EPSILON && local_interval.contains(t) {
-                record.t = t;
-                record.position = ray.at(t);
-                record.set_face_normal(ray, &self.mesh.vert_normal[face.vert_normal_idx[0]]);
-                record.material = Some(&self.material);
-                local_interval.max = t;
-                is_hit = true;
-            }
-        }
+        });
         is_hit
     }
 }

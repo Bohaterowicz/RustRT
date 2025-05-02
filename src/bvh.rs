@@ -1,10 +1,6 @@
-use std::cmp::Ordering;
-
 use crate::{
-    aabb::{Axis, BoundingBox, AABB},
-    entities::entity::{EntityList, HitRecord, Hittable, Transformable},
+    aabb::{Axis, AABB},
     interval::Interval,
-    math::vec3::Vec3,
     mesh::{Face, Mesh},
     ray::Ray,
 };
@@ -58,7 +54,7 @@ impl BVH {
         let tri_count = tris.len();
 
         // Base case: Create a leaf node if the triangle count is below the threshold
-        if tri_count <= 128 || depth == 10 {
+        if tri_count <= 32 || depth == 20 {
             return Self {
                 tree: BVHNode::Leaf(tris),
                 bbox,

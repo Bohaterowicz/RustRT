@@ -4,7 +4,6 @@ use crate::math::{
     mat3::{dot_v3, Mat3},
     vec3::{dot, Vec3},
 };
-use crate::ray::Ray;
 
 pub trait PDF {
     fn value(&self, direction: &Vec3) -> f32;
@@ -81,7 +80,7 @@ impl PDF for CosinePDF {
     }
 }
 
-impl<'a> PDF for HittablePDF<'a> {
+impl PDF for HittablePDF<'_> {
     fn value(&self, direction: &Vec3) -> f32 {
         self.hittable.pdf_value(&self.origin, direction)
     }
@@ -91,7 +90,7 @@ impl<'a> PDF for HittablePDF<'a> {
     }
 }
 
-impl<'a> PDF for MixedPDF<'a> {
+impl PDF for MixedPDF<'_> {
     fn value(&self, direction: &Vec3) -> f32 {
         0.5 * self.mix[0].value(direction) + 0.5 * self.mix[1].value(direction)
     }

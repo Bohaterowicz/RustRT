@@ -30,14 +30,16 @@ impl Vec3 {
     }
 
     pub fn normalize(&self) -> Self {
-        let length_squared = self.x * self.x + self.y * self.y + self.z * self.z;
+        let length_squared = self.length_squared();
         if length_squared > 0.0 {
-            let length = length_squared.sqrt();
-            Self {
-                x: self.x / length,
-                y: self.y / length,
-                z: self.z / length,
-            }
+            let inv_length = 1.0 / length_squared.sqrt();
+            let normalized = Self {
+                x: self.x * inv_length,
+                y: self.y * inv_length,
+                z: self.z * inv_length,
+            };
+            let inv_length = 1.0 / normalized.length();
+            normalized * inv_length
         } else {
             // Return a zero vector if the original vector has zero length
             Self {
@@ -246,6 +248,14 @@ impl ops::Div<f32> for Vec3 {
             y: self.y / rhs,
             z: self.z / rhs,
         }
+    }
+}
+
+impl ops::DivAssign<f32> for Vec3 {
+    fn div_assign(&mut self, rhs: f32) {
+        self.x /= rhs;
+        self.y /= rhs;
+        self.z /= rhs;
     }
 }
 
